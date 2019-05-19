@@ -9,8 +9,7 @@ CFLAGS          := -Wall -O2 -nostdlib -fno-builtin \
 		-I./include \
 		-I./HAL \
 		-I./common \
-		-I./src \
-		-lgcc -L/home/flinn/tools/4.5.1/arm-none-linux-gnueabi/lib
+		-I./src 
 
 OBJS := src/head.o src/main.o src/system_clock.o HAL/uart.o src/command.o
 

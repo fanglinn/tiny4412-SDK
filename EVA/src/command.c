@@ -10,10 +10,11 @@ static cmd_tbl_t  * CLI_cmd_start;
 static cmd_tbl_t  * CLI_cmd_end ;
 
 
-
+#define VER_MAJ		0
+#define VER_MIN		1
 static int do_version (struct cmd_tbl_s *cmd_tbl_t, int argc, int type, char * const argv[])
 {
-	puts("version : V1.0 \r\n");
+	printf("version : %d.%d \r\n", VER_MAJ,VER_MIN);
 	return 0;
 }
 
@@ -33,10 +34,7 @@ int do_help(struct cmd_tbl_s *cmd, int argc, int type, char * const argv[])
 
 	for (cmdtp = CLI_cmd_start; cmdtp != CLI_cmd_start + len; cmdtp++)
 	{
-		puts(cmdtp->name);
-		puts("\t");
-		puts(cmdtp->usage);
-		puts("\r\n");
+		printf("%s\t%s \r\n",cmdtp->name, cmdtp->usage);
 	}
 	
 	return 0;

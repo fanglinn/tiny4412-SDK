@@ -6,8 +6,6 @@
 
 int main(void)
 {
-	int i = 0;
-
 	system_clock_init();
 
 	uart_init();
@@ -15,6 +13,7 @@ int main(void)
 	
 
 	puts("\r\nstart...\r\n");
+	printf("hello, world!\r\n");
 	
 	while (1)
 	{

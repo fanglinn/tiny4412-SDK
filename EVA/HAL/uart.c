@@ -90,78 +90,104 @@ void uart_init(void)
     UFRACVAL0 = 4;
 }
 
-#if 0
-void itoa(int n, char s[], int fmt)
+#if 1
+void putchar_hex(char c)
 {
-	int i;
-	int j;
-	int sign;
+	char * hex = "0123456789ABCDEF";
 
-	sign = n;	 //记录符号
-	if(sign < 0)
+	putc(hex[(c>>4) & 0x0F]);
+	putc(hex[(c>>0) & 0x0F]);
+}
+
+void putint_hex(int a)
+{
+	putchar_hex( (a>>24) & 0xFF );
+	putchar_hex( (a>>16) & 0xFF );
+	putchar_hex( (a>>8) & 0xFF );
+	putchar_hex( (a>>0) & 0xFF );
+}
+
+char * itoa(int a, char * buf)
+{
+	int num = a;
+	int i = 0;
+	int len = 0;
+
+	do
 	{
-		n = -n;	//变为正数处理 
-	}
+		buf[i++] = num % 10 + '0';
+		num /= 10;
+	}while (num);
+	buf[i] = '\0';
 
-	i = 0;
-	do{
-		s[i++] = n % fmt + '0';	//取下一个数字
-	}while((n /= fmt) > 0);
-
-	if(sign < 0 )
+	len = i;
+	for (i = 0; i < len/2; i++)
 	{
-		s[i++] = '-';
-		s[i] = '\0';
+		char tmp;
+		tmp = buf[i];
+		buf[i] = buf[len-i-1];
+		buf[len-i-1] = tmp;
 	}
-
-	for(j = i; j >= 0; j-- )
-	{
-		putc(s[j]);
-	}
+	
+	return buf;
 }
 
 
-#define va_list char*   /* 可变参数地址 */
-#define va_start(ap, x) ap=(char*)&x+sizeof(x) /* 初始化指针指向第一个可变参数 */
-#define va_arg(ap, t)   (ap+=sizeof(t),*((t*)(ap-sizeof(t)))) /* 取得参数值，同时移动指针指向后续参数 */
-#define va_end(ap)  ap=0 /* 结束参数处理 */
+typedef int * va_list;
+#define va_start(ap, A)		(ap = (int *)&(A) + 1)
+#define va_arg(ap, T)		(*(T *)ap++)
+#define va_end(ap)		((void)0)
 
-void printf(const char *fmt, ...)
+int printf(const char * format, ...)
 {
+	char c;	
 	va_list ap;
-	char *p, *sval;
-	int ival;
-	double dval;
-	char buffer[64] = { 0 };
+		
+	va_start(ap, format);
 	
-	va_start(ap, fmt);
-	for (p = fmt; *p; p++) {
-	if(*p != '%') {
-		putc(*p);
-		continue;
-	}
-
-	switch(*++p) {
-		case 'x':			
-		case 'd':		
-			ival = va_arg(ap, int);
-			itoa(ival, buffer, 10);
-			char *pstr = buffer;
-			while (*pstr) putc(*pstr++);
-			break;
-		case 'f':
-			dval = va_arg(ap, double);
-			printf("%f", dval);
-			break;
-		case 's':
-			for (sval = va_arg(ap, char *); *sval; sval++)
-				putc(*sval);
-			break;
+	while ((c = *format++) != '\0')
+	{
+		switch (c)
+		{
+			case '%':
+			c = *format++;
+				
+			switch (c)
+			{
+				char ch;
+				char * p;
+				int a;
+				char buf[100];
+									
+				case 'c':
+					ch = va_arg(ap, int);
+					putc(ch);
+					break;
+				case 's':
+					p = va_arg(ap, char *);
+					puts(p);
+					break;					
+				case 'x':
+					a = va_arg(ap, int);
+					putint_hex(a);
+						break;		
+				case 'd':
+					a = va_arg(ap, int);
+					itoa(a, buf);
+					puts(buf);
+					break;	
+					
+				default:
+					break;
+			}				
+			break;		
+	
 		default:
-			putc(*p);
+			putc(c);
 			break;
 		}
 	}
-	va_end(ap);
+	
+	return 0;	
 }
 #endif

@@ -30,7 +30,7 @@ char getc(void);
 void putc(char c);
 void puts(const char *s);
 
-//void printf(const char *fmt, ...);
+int printf(const char * format, ...);
 
 void uart_init(void);
 
