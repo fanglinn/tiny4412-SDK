@@ -12,7 +12,7 @@ static cmd_tbl_t  * CLI_cmd_end ;
 
 #define VER_MAJ		0
 #define VER_MIN		1
-static int do_version (struct cmd_tbl_s *cmd_tbl_t, int argc, int type, char * const argv[])
+static int do_version ()
 {
 	printf("version : %d.%d \r\n", VER_MAJ,VER_MIN);
 	return 0;
@@ -27,7 +27,24 @@ REGISTER_CMD(
 );
 
 
-int do_help(struct cmd_tbl_s *cmd, int argc, int type, char * const argv[])
+static int do_readreg (unsigned int reg)
+{
+	unsigned int value = 0;
+	value = *((volatile unsigned int *)reg);
+
+	printf("addr :%x   value : %d \r\n", reg , value);
+    return 0;
+}
+
+REGISTER_CMD(
+        rd,
+        2,
+        ARG_TYPE_U32,
+        do_readreg,
+        "read reg value"
+);
+
+int do_help()
 {
 	cmd_tbl_t *cmdtp;
 	int len = CLI_cmd_end - CLI_cmd_start;
@@ -266,17 +283,239 @@ static int find_cmd (const char *name, cmd_tbl_t **cmd)
 
 int cmd_usage(const cmd_tbl_t *cmdtp)
 {
-	//printf("%s - %s\n\n", cmdtp->name, cmdtp->usage);
+	printf("%s - %s\n\n", cmdtp->name, cmdtp->usage);
 	return 1;
 }
+
+unsigned int strtoul (char *str, char **ptr, int base)
+{
+   unsigned long rvalue = 0;
+   int neg = 0;
+   int c;
+
+   /* Validate parameters */
+   if ((str != NULL) && (base >= 0) && (base <= 36))
+   {
+      /* Skip leading white spaces */
+      while (isblank(*str))
+      {
+         ++str;
+	}
+
+	/* Check for notations */
+       switch (str[0])
+	{
+		case '0':
+          if (base == 0)
+          {
+             if ((str[1] == 'x') || (str[1] == 'X'))
+				{
+					base = 16;
+                str += 2;
+             }
+             else
+             {
+                base = 8;
+                str++;
+				}
+			}
+			break;
+    
+		case '-':
+			neg = 1;
+          str++;
+          break;
+
+       case '+':
+          str++;
+			break;
+
+		default:
+			break;
+	}
+
+	if (base == 0)
+		base = 10;
+
+      /* Valid "digits" are 0..9, A..Z, a..z */
+      while (isalnum(c = *str))
+      {
+		/* Convert char to num in 0..36 */
+         if ((c -= ('a' - 10)) < 10)         /* 'a'..'z' */
+         {
+            if ((c += ('a' - 'A')) < 10)     /* 'A'..'Z' */
+            {
+               c += ('A' - '0' - 10);        /* '0'..'9' */
+			}
+		}
+
+		/* check c against base */
+		if (c >= base)
+		{
+			break;
+		}
+
+		if (neg)
+		{
+			rvalue = (rvalue * base) - c;
+		}
+		else
+		{
+			rvalue = (rvalue * base) + c;
+         }
+
+         ++str;
+		}
+	}
+
+   /* Upon exit, 'str' points to the character at which valid info */
+   /* STOPS.  No chars including and beyond 'str' are used.        */
+
+	if (ptr != NULL)
+			*ptr = str;
+		
+		return rvalue;
+	}
+
+
+int atoi (const char *str)
+{
+   char *s = (char *)str;
+   
+   return ((int)strtoul(s, NULL, 10));
+}
+
+
+static signed int _TOS32(const char *exp)
+{
+	return atoi(exp);
+}
+
+static unsigned int hexDigital2int(unsigned char ch)
+{
+	unsigned char val;
+	if((ch >= 'A') && (ch <= 'F'))
+		val = ch - 'A' + 10;
+	else if((ch >= 'a') && (ch <= 'f'))
+		val = ch - 'a' + 10;
+	else if((ch >= '0') && (ch <= '9'))
+		val = ch - '0';
+	else
+		val = 16;
+
+	return val;
+}
+
+static unsigned int hex2int(const char *exp)
+{
+	unsigned char ch;
+	unsigned int result = 0;
+	unsigned int digital;
+
+	while('\0' != (ch = *exp++))
+	{
+		digital = hexDigital2int(ch);
+
+		if(digital != 16)  // fixme
+		{
+			result = result * 16 + digital;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	return result;
+}
+
+
+static unsigned int _TOU32(const char *exp)
+{
+	char first = *exp;
+	char second = *exp + 1;
+	int result;
+
+	if(('0' == first) && ('1' == second)) //??? while not 'x'/'X'
+	{
+		result = hex2int(exp + 2);  // skip prefix
+	}
+	else if('-' == first)  // s32
+	{
+		return atoi(exp);
+	}
+	else
+	{
+		result = (int)atoi(exp);
+	}
+
+	return result;
+}
+
+static unsigned int _TOBool(const char *exp)
+{
+	if(('t' == *exp) || ('T' == *exp))
+		return 1;
+	else
+		return 0;
+}
+
+
+
+static void *conventer(char *exp, unsigned char type)
+{
+	switch(type)
+	{
+		case ARG_TYPE_S32:
+			return (void *)_TOS32(exp);
+
+		case ARG_TYPE_U32:
+			return (void *)_TOU32(exp);
+
+		case ARG_TYPE_BOOL:
+			return (void *)_TOBool(exp);
+
+		case ARG_TYPE_STR:
+			return exp;
+
+		default:
+			break;
+	}
+    return 0;
+}
+
 
 static int cmd_call(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 {
 	int result;
 
-	result = (cmdtp->cmd)(cmdtp, flag, argc, argv);
+	switch(argc - 1)
+	{
+		case 0:
+			result = (cmdtp->cmd)();
+			break;
+
+		case 1:
+			result = (cmdtp->cmd)(conventer(argv[1], cmdtp->type));
+			break;
+
+		case 2:
+			result = (cmdtp->cmd)(conventer(argv[1], cmdtp->type), 
+								  conventer(argv[2], cmdtp->type));
+			break;
+
+		case 3:
+			result = (cmdtp->cmd)(conventer(argv[1], cmdtp->type), 
+								  conventer(argv[2], cmdtp->type), 
+								  conventer(argv[3], cmdtp->type));
+			break;
+
+		default:
+			break;
+	}
+
 	if (result)
-		puts("Command failed");
+		printf("Command failed, result : %d \r\n", result);
 	return result;
 }
 
@@ -291,9 +530,10 @@ enum command_ret_t cmd_process(int flag, int argc, char * const argv[],
 	/* Look up command in command table */
 	found = find_cmd(argv[0], &cmdtp);
 	if (found == 0) {
-		puts("Unknown command  '");
-		puts(argv[0]);
-		puts("' - try 'help'\r\n");
+		//puts("Unknown command  '");
+		//puts(argv[0]);
+		//puts("' - try 'help'\r\n");
+		printf("Unknown command  '%s' - try 'help'\r\n");
 		return 1;
 	}
 
@@ -322,6 +562,7 @@ static int builtin_run_command(const char *cmd, int flag)
 	int argc, inquotes;
 	int repeatable = 1;
 	int rc = 0;
+	//int i = 0;
 
 	
 	if (!cmd || !*cmd) {
@@ -369,6 +610,10 @@ static int builtin_run_command(const char *cmd, int flag)
 			rc = -1;	/* no command at all */
 			continue;
 		}
+		
+		//printf("argc : %d \r\n", argc);
+		//for(i = 0; i < argc;i++)
+		//	printf("argv : %s\r\n", argv[i]);
 
 		if (cmd_process(flag, argc, argv, &repeatable, NULL))
 			rc = -1;

@@ -24,7 +24,7 @@ struct cmd_tbl_s {
 	char		*name;		/* Command Name			*/
 	int		maxargs;	/* maximum number of arguments	*/
 	int		type;
-	int		(*cmd)(struct cmd_tbl_s *, int, int, char * const []);
+	int		(*cmd)();
 	char		*usage;		/* Usage message	(short)	*/
 };
 
@@ -39,6 +39,11 @@ typedef struct cmd_tbl_s	cmd_tbl_t;
 #endif
 
 #define isblank(c)	(c == ' ' || c == '\t')
+#define isalnum(ch)	(((ch >= '0') && (ch <= '9')) || \
+					 ((ch >= 'A') && (ch <= 'Z')) || \
+					 ((ch >= 'a') && (ch <= 'z')))
+
+
 
 
 void command_loop(void);
