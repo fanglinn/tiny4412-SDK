@@ -1,0 +1,33 @@
+CC      = /home/flinn/tools/4.5.1/bin/arm-none-linux-gnueabi-gcc
+LD      = /home/flinn/tools/4.5.1/bin/arm-none-linux-gnueabi-ld
+AR      = /home/flinn/tools/4.5.1/bin/arm-none-linux-gnueabi-ar
+OBJCOPY = /home/flinn/tools/4.5.1/bin/arm-none-linux-gnueabi-objcopy
+OBJDUMP = /home/flinn/tools/4.5.1/bin/arm-none-linux-gnueabi-objdump
+
+
+CFLAGS          := -Wall -O2 -nostdlib -fno-builtin \
+		-I./include \
+		-I./HAL \
+		-I./common \
+		-I./src \
+		-lgcc -L/home/flinn/tools/4.5.1/arm-none-linux-gnueabi/lib
+
+OBJS := src/head.o src/main.o src/system_clock.o HAL/uart.o src/command.o
+
+VER = 1.0
+TARGET = tiny4412_$(VER).bin
+
+$(TARGET): $(OBJS)
+	${LD} -Tbasic.lds -o $(TARGET)_elf $^
+	${OBJCOPY} -O binary -S $(TARGET)_elf $@
+	${OBJDUMP} -D -m arm $(TARGET)_elf > $(TARGET).dis
+
+
+%.o:%.c
+	${CC}  $(CFLAGS) -c -o $@ $<
+
+%.o:%.S
+	${CC}  $(CFLAGS) -c -o $@ $<
+
+clean:
+	rm -f $(TARGET) $(TARGET)_elf $(TARGET).dis *.o *.bin $(OBJS)
