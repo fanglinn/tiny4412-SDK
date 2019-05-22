@@ -11,7 +11,7 @@ CFLAGS          := -Wall -O2 -nostdlib -fno-builtin \
 		-I./common \
 		-I./src 
 
-OBJS := src/head.o src/main.o HAL/uart.o src/command.o
+OBJS := src/head.o src/main.o HAL/uart.o src/command.o src/system_clock.o
 
 VER = 1.0
 TARGET = tiny4412_$(VER).bin
