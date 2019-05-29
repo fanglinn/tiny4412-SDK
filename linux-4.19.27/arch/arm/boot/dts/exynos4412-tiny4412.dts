@@ -18,6 +18,7 @@
 
 	chosen {
 		stdout-path = &serial_0;
+		bootargs = "root=/dev/ram0 rw rootfstype=ext4 console=ttySAC0,115200 init=/linuxrc earlyprintk";
 	};
 
 	memory@40000000 {
