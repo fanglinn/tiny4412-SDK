@@ -1,0 +1,77 @@
+/*
+ * Odroid-U3/X2 board device tree source
+ *
+ * Copyright (c) 2014 Samsung Electronics Co., Ltd.
+ *		http://www.samsung.com
+ *
+ * SPDX-License-Identifier:	GPL-2.0+
+ */
+
+/dts-v1/;
+#include "exynos4412.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+        model = "Tiny4412 based on Exynos4412";
+        compatible = "samsung,tiny4412", "samsung,exynos4412";
+
+        chosen {
+                stdout-path = "serial0";
+        };
+
+	memory {
+		reg = <0x40000000 0x80000000>;
+	};
+
+
+        aliases {
+                serial0 = "/serial@13800000";
+                console = "/serial@13800000";
+		mmc2 = "/sdhci@12530000";
+		mmc4 = "/dwmmc@12550000";
+        };
+
+        serial0:serial@13810000 {
+                status = "okay";
+        };
+
+        
+	sdhci@12530000 {
+                compatible = "samsung,exynos4412-sdhci";
+                samsung,bus-width = <4>;
+                samsung,timing = <1 2 3>;
+                cd-gpios = <&gpk2 2 0>;
+        };
+
+	dwmmc@12550000 {
+		compatible = "samsung,exynos4412-dw-mshc";
+		samsung,bus-width = <8>;
+		samsung,timing = <2 1 0>;
+		samsung,removable = <0>;
+		fifoth_val = <0x203f0040>;
+		bus_hz = <400000000>;
+		div = <0x3>;
+		index = <4>;
+	};
+
+	 emmc-reset {
+		compatible = "samsung,emmc-reset";
+		reset-gpio = <&gpx1 1 GPIO_ACTIVE_LOW>;
+	};
+
+	ehci@12580000 {
+		compatible = "samsung,exynos-ehci";
+		reg = <0x12580000 0x100>;               
+		#address-cells = <1>;
+		#size-cells = <1>;
+		phy {
+			compatible = "samsung,exynos-usb-phy";
+			reg = <0x125B0000 0x100>;
+		};
+	};
+
+	usb-phy-reset {
+		compatible = "smsc,usb-phy-reset";
+		reset-gpio = <&gpm2 4 GPIO_ACTIVE_LOW>;
+	};
+};

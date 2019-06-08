@@ -1,0 +1,3356 @@
+diff -urNwB u-boot-2017.03/arch/arm/dts/exynos4412-tiny4412.dts u-boot-2017.03_nice/arch/arm/dts/exynos4412-tiny4412.dts
+--- u-boot-2017.03/arch/arm/dts/exynos4412-tiny4412.dts	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/dts/exynos4412-tiny4412.dts	2019-06-07 23:39:48.677412843 +0800
+@@ -0,0 +1,77 @@
++/*
++ * Odroid-U3/X2 board device tree source
++ *
++ * Copyright (c) 2014 Samsung Electronics Co., Ltd.
++ *		http://www.samsung.com
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++/dts-v1/;
++#include "exynos4412.dtsi"
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++        model = "Tiny4412 based on Exynos4412";
++        compatible = "samsung,tiny4412", "samsung,exynos4412";
++
++        chosen {
++                stdout-path = "serial0";
++        };
++
++	memory {
++		reg = <0x40000000 0x80000000>;
++	};
++
++
++        aliases {
++                serial0 = "/serial@13800000";
++                console = "/serial@13800000";
++		mmc2 = "/sdhci@12530000";
++		mmc4 = "/dwmmc@12550000";
++        };
++
++        serial0:serial@13810000 {
++                status = "okay";
++        };
++
++        
++	sdhci@12530000 {
++                compatible = "samsung,exynos4412-sdhci";
++                samsung,bus-width = <4>;
++                samsung,timing = <1 2 3>;
++                cd-gpios = <&gpk2 2 0>;
++        };
++
++	dwmmc@12550000 {
++		compatible = "samsung,exynos4412-dw-mshc";
++		samsung,bus-width = <8>;
++		samsung,timing = <2 1 0>;
++		samsung,removable = <0>;
++		fifoth_val = <0x203f0040>;
++		bus_hz = <400000000>;
++		div = <0x3>;
++		index = <4>;
++	};
++
++	 emmc-reset {
++		compatible = "samsung,emmc-reset";
++		reset-gpio = <&gpx1 1 GPIO_ACTIVE_LOW>;
++	};
++
++	ehci@12580000 {
++		compatible = "samsung,exynos-ehci";
++		reg = <0x12580000 0x100>;               
++		#address-cells = <1>;
++		#size-cells = <1>;
++		phy {
++			compatible = "samsung,exynos-usb-phy";
++			reg = <0x125B0000 0x100>;
++		};
++	};
++
++	usb-phy-reset {
++		compatible = "smsc,usb-phy-reset";
++		reset-gpio = <&gpm2 4 GPIO_ACTIVE_LOW>;
++	};
++};
+diff -urNwB u-boot-2017.03/arch/arm/dts/Makefile u-boot-2017.03_nice/arch/arm/dts/Makefile
+--- u-boot-2017.03/arch/arm/dts/Makefile	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/dts/Makefile	2019-05-12 17:45:21.678396270 +0800
+@@ -14,7 +14,8 @@
+ 	exynos4210-universal_c210.dtb \
+ 	exynos4210-trats.dtb \
+ 	exynos4412-trats2.dtb \
+-	exynos4412-odroid.dtb
++	exynos4412-odroid.dtb \
++	exynos4412-tiny4412.dtb
+ 
+ dtb-$(CONFIG_TARGET_HIKEY) += hi6220-hikey.dtb
+ 
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/clock_init_exynos4412.c u-boot-2017.03_nice/arch/arm/mach-exynos/clock_init_exynos4412.c
+--- u-boot-2017.03/arch/arm/mach-exynos/clock_init_exynos4412.c	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/clock_init_exynos4412.c	2019-05-12 17:58:07.490258654 +0800
+@@ -0,0 +1,562 @@
++/*
++* Clock Initialization for board based on EXYNOS4412
++*
++*                 2016
++* Modified by AP0904225 <ap0904225@qq.com>
++*
++* Copyright (C) 2013 Samsung Electronics
++* Rajeshwari Shinde <rajeshwari.s@samsung.com>
++*
++* See file CREDITS for list of people who contributed to this
++* project.
++*
++* This program is free software; you can redistribute it and/or
++* modify it under the terms of the GNU General Public License as
++* published by the Free Software Foundation; either version 2 of
++* the License, or (at your option) any later version.
++*
++* This program is distributed in the hope that it will be useful,
++* but WITHOUT ANY WARRANTY; without even the implied warranty of
++* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++* GNU General Public License for more details.
++*
++* You should have received a copy of the GNU General Public License
++* along with this program; if not, write to the Free Software
++* Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++* MA 02111-1307 USA
++*/
++
++#include <common.h>
++#include <config.h>
++#include <asm/io.h>
++#include <asm/arch/cpu.h>
++#include <asm/arch/clk.h>
++#include <asm/arch/clock.h>
++#include "common_setup.h"
++
++#include "clock_init_exynos4412.h"
++
++/*
++ * system_clock_init: Initialize core clock and bus clock.
++ * void system_clock_init(void)
++ */
++void system_clock_init(void)
++{
++   unsigned int set, clr, clr_src_cpu, clr_pll_con0, clr_src_dmc;
++   struct exynos4x12_clock *clk =(struct exynos4x12_clock *)
++                       samsung_get_base_clock();
++
++   /*
++   *   APLL= 1400 MHz
++   *   MPLL=800 MHz
++   *   EPLL=96 MHz
++   *   VPLL=108 MHz
++   *   freq (ARMCLK) = 1400 MHz at 1.3 V
++   *   freq (ACLK_COREM0) = 350 MHz at 1.3V
++   *   freq (ACLK_COREM1) = 188 MHz at 1.3 V
++   *   freq (PERIPHCLK) = 1400 MHz at 1.3 V
++   *   freq (ATCLK) = 214 MHz at 1.3 V
++   *   freq (PCLK_DBG) = 107 MHz at 1.3 V
++   *   freq (SCLK_DMC) = 400 MHz at 1.0 V
++   *   freq (ACLK_DMCD) = 200 MHz at 1.0 V
++   *   freq (ACLK_DMCP) = 100 MHz at 1.0 V
++   *   freq (ACLK_ACP) = 200 MHz at 1.0 V
++   *   freq (PCLK_ACP) = 100 MHz at 1.0 V
++   *   freq (SCLK_C2C) = 400 MHz at 1.0 V
++   *   freq (ACLK_C2C) = 200 MHz at 1.0 V
++   *   freq (ACLK_GDL) = 200 MHz at 1.0 V
++   *   freq (ACLK_GPL) = 100 MHz at 1.0 V
++   *   freq (ACLK_GDR) = 200 MHz at 1.0 V
++   *   freq (ACLK_GPR) = 100 MHz at 1.0 V
++   *   freq (ACLK_400_MCUISP) = 400 MHz at 1.0 V
++   *   freq (ACLK_200) = 160 MHz at 1.0 V
++   *   freq (ACLK_100) = 100 MHz at 1.0 V
++   *   freq (ACLK_160) = 160 MHz at 1.0 V
++   *   freq (ACLK_133) = 133 MHz at 1.0 V
++   *   freq (SCLK_ONENAND) = 160 MHz at 1.0 V
++   */
++
++   /*
++    *before set system clocks,we switch system clocks src to FINpll
++   */
++
++       /*
++        * Bit values:             0      ;    1
++        * MUX_APLL_SEL:        FIN_PLL   ; FOUT_APLL
++        * MUX_CORE_SEL:        MOUT_APLL ; SCLK_MPLL
++        * MUX_HPM_SEL:         MOUT_APLL ; SCLK_MPLL_USER_C
++        * MUX_MPLL_USER_SEL_C: FIN_PLL   ; SCLK_MPLL
++       */
++   clr_src_cpu = MUX_APLL_SEL(1) | MUX_CORE_SEL(1) |
++             MUX_HPM_SEL(1) | MUX_MPLL_USER_SEL_C(1);
++   set = MUX_APLL_SEL(0) | MUX_CORE_SEL(0) | MUX_HPM_SEL(0) |
++         MUX_MPLL_USER_SEL_C(0);
++   clrsetbits_le32(&clk->src_cpu, clr_src_cpu, set);
++   /* Wait for mux change */
++   while (readl(&clk->mux_stat_cpu) & MUX_STAT_CPU_CHANGING)
++       continue;
++
++
++   /*
++   ******************************************************
++   *           Step 1: Set Clock divider
++   ******************************************************
++   */
++
++   /*=====================set APLL related dividers(CMU_CPU)==============================*/
++       /*
++        * Set dividers for MOUTcore
++        * MOUTcore     =   MOUTapll = 1400 MHz
++        * SCLKapll     =   MOUTapll / (APLL_RATIO + 1) = 700 MHz (DIVapll:APLL_RATIO=1)
++        * ARMCLK       =   MOUTcore / (ratio + 1) = 1400 MHz (DIVcore:CORE_RATIO=0;DIVcore2:CORE2_RATIO=0)
++        * ACLK_COREM0  =   ARMCLK / (COREM0_RATIO + 1) = 355 MHz (DIVcorem0:COREM0_RATIO=3)
++        * ACLK_COREM1  =   ARMCLK / (COREM1_RATIO + 1) = 188 MHz (DIVcorem1:COREM1_RATIO=7)
++        * PERIPHCLK    =   ARMCLK / (PERIPH_RATIO + 1) = 1400 MHz (DIVperiph:PERIPH_RATIO=0)
++        * OUTatb       =   MOUTcore / (ATB_RATIO + 1) = 200 MHz (DIVatb:ATB_RATIO=6)
++        * ATCLK        =   OUTatb = 200 MHz
++        * PCLK_DBG     = OUTatb / (PCLK_DBG_RATIO + 1) = 100 MHz (PCLK_DBG_RATIO=1)
++       */
++   clr = APLL_RATIO(7) |CORE_RATIO(7)| CORE2_RATIO(7)|
++           COREM0_RATIO(7) | COREM1_RATIO(7) |
++         PERIPH_RATIO(7) | ATB_RATIO(7) | PCLK_DBG_RATIO(7) ;
++   set = APLL_RATIO(1) |CORE_RATIO(0) | CORE2_RATIO(0) |
++           COREM0_RATIO(3) | COREM1_RATIO(7)|
++         PERIPH_RATIO(0) | ATB_RATIO(6) | PCLK_DBG_RATIO(1) ;
++   clrsetbits_le32(&clk->div_cpu0, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_cpu0) & DIV_STAT_CPU0_CHANGING)
++       continue;
++
++       /* Set dividers for MOUThpm
++        * MOUThpm =    MOUTapll = 1400 MHz
++        * OUTcopy =    MOUThpm / (COPY_RATIO + 1) = 200 (DIVcopy:COPY_RATIO=6)
++        * sclkhpm =    OUTcopy / (HPM_RATIO + 1) = 200 (DIVhpm:HPM_RATIO=0)
++        * ACLK_CORES = ARMCLK / (CORES_RATIO + 1) = 233 (DIVcores:CORES_RATIO=5)
++        */
++   clr = COPY_RATIO(7) | HPM_RATIO(7) | CORES_RATIO(7);
++   set = COPY_RATIO(6) | HPM_RATIO(0) | CORES_RATIO(5);
++   clrsetbits_le32(&clk->div_cpu1, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_cpu1) & DIV_STAT_CPU1_CHANGING)
++       continue;
++
++
++   /*=====================set MPLL related dividers(CMU_DMC)==============================*/
++
++       /*
++        * Set CLK_DIV_DMC0
++        * MOUTmpll = SCLKmpll = 800 MHz
++        * MOUTdmc_bus  = SCLKmpll = 800 MHz
++        * MOUTdphy = SCLKmpll = 800 MHz
++        *
++        * SCLK_DMC = MOUTdmc_bus / (DMC_RATIO + 1) = 400MHz (DIVdmc:DMC_RATIO=1)
++        * ACLK_DMCD = SCLK_DMC / (DMCD_RATIO + 1) = 200MHz  (DIVdmcd:DMCD_RATIO=1)
++        * ACLK_DMCP = ACLK_DMCD / (DMCP_RATIO + 1) = 100MHz (DIVdmcp:DMCP_RATIO=1)
++        * ACLK_ACP = MOUTdmc_bus / (ACP_RATIO + 1) = 200MHz (DIVacp:ACP_RATIO=3)
++        * PCLK_ACP = ACLK_ACP / (ACP_PCLK_RATIO + 1) = 100MHz (DIVacp_pclk:ACP_PCLK_RATIO=1)
++        * SCLK_DPHY = MOUTdphy / (DPHY_RATIO + 1) = 400MHz (DIVdphy:DPHY_RATIO=1)
++        */
++   clr = DMC_RATIO(7) | DMCD_RATIO(7) | DMCP_RATIO(7) |
++               ACP_RATIO(7) | ACP_PCLK_RATIO(7) | DPHY_RATIO(7);
++   set = DMC_RATIO(1) | DMCD_RATIO(1) | DMCP_RATIO(1) |
++               ACP_RATIO(3) | ACP_PCLK_RATIO(1) | DPHY_RATIO(1);
++   clrsetbits_le32(&clk->div_dmc0, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_dmc0) & DIV_STAT_DMC0_CHANGING)
++       continue;
++
++       /*
++        * Set CLK_DIV_DMC1
++        * MOUTmpll = SCLKmpll = 800 MHz
++        * MOUTc2c = SCLKmpll = 800 Mhz
++        * MOUTpwi = SCLKmpll = 800 MHz
++        * MOUTg2d_acp = SCLKmpll = 800 MHz
++        *
++        * SCLK_C2C = MOUTc2c / (C2C_RATIO + 1) = 400MHz (DIVc2c:C2C_RATIO=1)
++        * ACLK_C2C = SCLK_C2C / (C2C_ACLK_RATIO + 1) = 200MHz (DIVc2c_aclk:C2C_ACLK_RATIO=1)
++        * SCLK_PWI = MOUTpwi / (PWI_RATIO + 1) = 100MHz (DIVpwi:PWI_RATIO=7)
++        * SCLK_G2D_ACP = MOUTg2d_acp / (G2D_ACP_RATIO + 1) = 200MHz (G2D_ACP_RATIO=3)
++        * IECDPMCLKEN = ACLK_DMCP/( DPM_RATIO+ 1) = 50MHz(DIVdpm:DPM_RATIO=1)
++        * IECDVSEMCLKEN = ACLK_DMCP/( DVSEM_RATIO+ 1) = 50MHz(DIVdvsem:DVSEM_RATIO=1)
++        */
++   clr = C2C_RATIO(7) | C2C_ACLK_RATIO(7) | PWI_RATIO(15) |
++               G2D_ACP_RATIO(15) | DVSEM_RATIO(127) | DPM_RATIO(127);
++   set = C2C_RATIO(1) | C2C_ACLK_RATIO(1) | PWI_RATIO(7) |
++               G2D_ACP_RATIO(3) | DVSEM_RATIO(1) | DPM_RATIO(1);
++   clrsetbits_le32(&clk->div_dmc1, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_dmc1) & DIV_STAT_DMC1_CHANGING)
++       continue;
++
++
++   /*=====================set CMU_TOP related dividers==============================*/
++       /*
++        * Set CLK_DIV_TOP
++        * SCLKmll_user_t = SCLKmpll = 800 MHz
++        * MOUTACLK_400_MC = SCLKmpll = 800 MHz
++        * MOUTACLK_400_MCUISP = MOUTACLK_400_MC/(ACLK_400_MCUISP_RATIO + 1) = 400MHz (DIVaclk_400_mc:ACLK_400_MCUISP_RATIO=1)
++        * MOUTACLK_200 = SCLKmpll = 800 MHz
++        * ACLK_200 = MOUTACLK_200/(ACLK_200_RATIO + 1) = 160MHz (DIVaclk_200:ACLK_200_RATIO=4)
++        * MOUTACLK_266_gps = SCLKmpll = 800 MHz
++        * ACLK_266_GPS = [MOUTACLK_266_GPS /(ACLK_266_GPS_RATIO + 1)] = 266MHz (DIVaclk_266_gps:ACLK_266_GPS_RATIO=2)
++        * MOUTACLK_100 = SCLKmpll = 800 MHz
++        * ACLK_100 = [MOUTACLK_100/(ACLK_100_RATIO + 1)] = 100MHz (DIVaclk_100:ACLK_100_RATIO=7)
++        * MOUTACLK_160 = SCLKmpll = 800 MHz
++        * ACLK_160 = [MOUTACLK_160 /(ACLK_160_RATIO + 1)] = 160MHz (DIVaclk_160:ACLK_160_RATIO=4)
++        * MOUTACLK_133 = SCLKmpll = 800 MHz
++        * ACLK_133 = [MOUTACLK_133 /(ACLK_133_RATIO + 1)] = 133MHz (DIVaclk_133:ACLK_133_RATIO=5)
++        * MOUTonenand = MOUTonenand_1 = ACLK_133MHz
++        * SCLK_ONENAND = [MOUTONENAND_1 /(ONENAND_RATIO + 1)] = 66MHz (DIVonenand:ONENAND_RATIO=1)
++        */
++   clr = ACLK_400_MCUISP_RATIO(7) | ACLK_200_RATIO(7) | ACLK_266_GPS_RATIO(7) |
++               ACLK_100_RATIO(15) | ACLK_160_RATIO(7) | ACLK_133_RATIO(7) |ONENAND_RATIO(7);
++   set = ACLK_400_MCUISP_RATIO(1) | ACLK_200_RATIO(4) | ACLK_266_GPS_RATIO(2) |
++               ACLK_100_RATIO(7) | ACLK_160_RATIO(4) | ACLK_133_RATIO(5) |ONENAND_RATIO(1);
++   clrsetbits_le32(&clk->div_top, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_top) & DIV_STAT_TOP_CHANGING)
++       continue;
++
++   /*=====================set CMU_LEFTBUS related dividers==============================*/
++       /*
++        * Set CLK_DIV_LEFTBUS
++        * MOUTgdl = SCLKmpll = 800 MHz
++        * ACLK_GDL = MOUTgdl/(GDL_RATIO + 1) = 200MHz (DIVgdl:GDL_RATIO=3)
++        * ACLK_GPL = ACLK_GDL/(GPL_RATIO + 1) = 100MHz (DIVgpl:GPL_RATIO=1)
++        */
++   clr = GDL_RATIO(7) | GPL_RATIO(7) ;
++   set = GDL_RATIO(3) | GPL_RATIO(1) ;
++   clrsetbits_le32(&clk->div_leftbus, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_leftbus) & DIV_STAT_LEFTBUS_CHANGING)
++       continue;
++
++   /*=====================set CMU_RIGHTBUS related dividers==============================*/
++       /*
++        * Set CLK_DIV_RIGHTBUS
++        * MOUTgdr = SCLKmpll = 800 MHz
++        * ACLK_GDR = MOUTgdr/(GDR_RATIO + 1) = 200MHz (DIVgdl:GDR_RATIO=3)
++        * ACLK_GPL = ACLK_GDL/(GPR_RATIO + 1) = 100MHz (DIVgpl:GPR_RATIO=1)
++        */
++   clr = GDR_RATIO(7) | GPR_RATIO(7) ;
++   set = GDR_RATIO(3) | GPR_RATIO(1) ;
++   clrsetbits_le32(&clk->div_rightbus, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_rightbus) & DIV_STAT_LEFTBUS_CHANGING)
++       continue;
++
++   /*=====================set other dividers==============================*/
++
++   /* CLK_DIV_PERIL0 (UART0-4 dividers ) */
++       /*
++        * MOUTuart0-4 = SCLKMPLL_USER_T =800MHz
++        *
++        * SCLK_UARTx = MOUTuartX / (UARTx_RATIO + 1) = 100MHz (DIVuart0-4:UARTx_RATIO=7)
++       */
++   clr = UART0_RATIO(15) | UART1_RATIO(15) | UART2_RATIO(15) |
++             UART3_RATIO(15) | UART4_RATIO(15);
++   set = UART0_RATIO(7) | UART1_RATIO(7) | UART2_RATIO(7) |
++             UART3_RATIO(7) | UART4_RATIO(7);
++   clrsetbits_le32(&clk->div_peril0, clr, set);
++
++   while (readl(&clk->div_stat_peril0) & DIV_STAT_PERIL0_CHANGING)
++       continue;
++
++   /* CLK_DIV_FSYS1 */
++   clr = MMC0_RATIO(15) | MMC0_PRE_RATIO(255) | MMC1_RATIO(15) |
++             MMC1_PRE_RATIO(255);
++       /*
++        * For MOUTmmc0-3 = 800 MHz (MPLL)
++        *
++        * DOUTmmc1 = MOUTmmc1 / (ratio + 1) = 100 (7)
++        * sclk_mmc1 = DOUTmmc1 / (ratio + 1) = 50 (1)
++        * DOUTmmc0 = MOUTmmc0 / (ratio + 1) = 100 (7)
++        * sclk_mmc0 = DOUTmmc0 / (ratio + 1) = 50 (1)
++       */
++   set = MMC0_RATIO(7) | MMC0_PRE_RATIO(1) | MMC1_RATIO(7) |
++             MMC1_PRE_RATIO(1);
++
++   clrsetbits_le32(&clk->div_fsys1, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_fsys1) & DIV_STAT_FSYS1_CHANGING)
++       continue;
++
++   /* CLK_DIV_FSYS2 */
++   clr = MMC2_RATIO(15) | MMC2_PRE_RATIO(255) | MMC3_RATIO(15) |
++             MMC3_PRE_RATIO(255);
++       /*
++        * For MOUTmmc0-3 = 800 MHz (MPLL)
++        *
++        * DOUTmmc3 = MOUTmmc3 / (ratio + 1) = 100 (7)
++        * sclk_mmc3 = DOUTmmc3 / (ratio + 1) = 50 (1)
++        * DOUTmmc2 = MOUTmmc2 / (ratio + 1) = 100 (7)
++        * sclk_mmc2 = DOUTmmc2 / (ratio + 1) = 20 (4)
++       */
++   set = MMC2_RATIO(7) | MMC2_PRE_RATIO(4) | MMC3_RATIO(7) |
++             MMC3_PRE_RATIO(1);
++
++   clrsetbits_le32(&clk->div_fsys2, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_fsys2) & DIV_STAT_FSYS2_CHANGING)
++       continue;
++
++   /* CLK_DIV_FSYS3 */
++   clr = MMC4_RATIO(15) | MMC4_PRE_RATIO(255);
++       /*
++        * For MOUTmmc4 = 800 MHz (MPLL)
++        *
++        * DOUTmmc4 = MOUTmmc4 / (ratio + 1) = 100 (7)
++        * sclk_mmc4 = DOUTmmc4 / (ratio + 1) = 100 (0)
++       */
++   set = MMC4_RATIO(7) | MMC4_PRE_RATIO(0);
++
++   clrsetbits_le32(&clk->div_fsys3, clr, set);
++
++   /* Wait for divider ready status */
++   while (readl(&clk->div_stat_fsys3) & DIV_STAT_FSYS3_CHANGING)
++       continue;
++
++
++   /*
++    * Step 2: Set APLL, MPLL, EPLL, VPLL locktime
++   */
++   clr = PLL_LOCKTIME(65535);
++
++   /*====== APLL locktime [APLL = 1400MHz :  SDIV(0) , PDIV(3) , MDIV(175)] =====*/
++   set = PLL_LOCKTIME( PDIV(3) * 270 );
++   clrsetbits_le32(&clk->apll_lock, clr, set);
++
++   /*====== MPLL locktime [MPLL = 800MHz  :  SDIV(0) , PDIV(3) , MDIV(100)] =====*/
++   set = PLL_LOCKTIME( PDIV(3) * 270 );
++   clrsetbits_le32(&clk->mpll_lock, clr, set);
++
++   /*====== EPLL locktime [EPLL = 96MHz   :  SDIV(3) , PDIV(2) , MDIV(64)] =====*/
++   set = PLL_LOCKTIME( PDIV(2) * 3000 );
++   clrsetbits_le32(&clk->epll_lock, clr, set);
++
++   /*====== VPLL locktime [VPLL = 108MHz  :  SDIV(3) , PDIV(2) , MDIV(72)] =====*/
++   set = PLL_LOCKTIME( PDIV(2) * 3000 );
++   clrsetbits_le32(&clk->vpll_lock, clr, set);
++
++
++   /*
++    * Step 3: Set PLL PMS values and enable PLL
++    *      1.Set PDIV, MDIV, and SDIV values for APLL, MPLL, EPLL, VPLL
++    *      2.Turn on APLL, MPLL, EPLL, VPLL
++   */
++
++   /**************** Set APLL to 1400MHz ****************/
++   /*APLL_CON1*/
++   clr = AFC(15) | LOCK_CON_DLY(15) | LOCK_CON_IN(3) |
++           LOCK_CON_OUT(3) |FEED_EN(1)| AFC_ENB(1) |
++           DCC_ENB(1) | BYPASS(1) |RESV0(1) | RESV1(1);
++   set = AFC(0) | LOCK_CON_DLY(8) | LOCK_CON_IN(3) |
++           LOCK_CON_OUT(0) |FEED_EN(0)| AFC_ENB(0) |
++           DCC_ENB(0) | BYPASS(0) |RESV0(1) | RESV1(0);
++   clrsetbits_le32(&clk->apll_con1, clr, set);
++
++   /*APLL_CON0*/
++   clr_pll_con0 = SDIV(7) | PDIV(63) | MDIV(1023) | FSEL(1);
++   set = SDIV(0) | PDIV(3) | MDIV(175) | FSEL(0) | PLL_ENABLE(1);
++   clrsetbits_le32(&clk->apll_con0, clr_pll_con0, set);
++
++   /* Wait for PLL to be locked */
++   while (!(readl(&clk->apll_con0) & PLL_LOCKED_BIT))
++       continue;
++
++
++   /**************** Set MPLL to 800MHz ****************/
++   /*MPLL_CON1*/
++   clr = AFC(15) | LOCK_CON_DLY(15) | LOCK_CON_IN(3) |
++           LOCK_CON_OUT(3) |FEED_EN(1)| AFC_ENB(1) |
++           DCC_ENB(1) | BYPASS(1) |RESV0(1) | RESV1(1);
++   set = AFC(0) | LOCK_CON_DLY(8) | LOCK_CON_IN(3) |
++           LOCK_CON_OUT(0) |FEED_EN(0)| AFC_ENB(0) |
++           DCC_ENB(0) | BYPASS(0) |RESV0(1) | RESV1(0);
++   clrsetbits_le32(&clk->mpll_con1, clr, set);
++
++   /*MPLL_CON0*/
++   set = SDIV(0) | PDIV(3) | MDIV(100) | FSEL(0) | PLL_ENABLE(1);
++   clrsetbits_le32(&clk->mpll_con0, clr_pll_con0, set);
++
++   /* Wait for PLL to be locked */
++   while (!(readl(&clk->mpll_con0) & PLL_LOCKED_BIT))
++       continue;
++
++
++   /**************** Set EPLL to 96MHz ****************/
++   /*EPLL_CON2*/
++   clr = BYPASS_E_V(1) | SSCG_EN(1) |
++           AFC_ENB_E_V(1) |DCC_ENB_E_V(1) ;
++   set = BYPASS_E_V(1) | SSCG_EN(1) |
++           AFC_ENB_E_V(1) |DCC_ENB_E_V(1) ;
++   clrsetbits_le32(&clk->epll_con2, clr, set);
++
++   /*EPLL_CON1*/
++   clr = K(65535) | MFR(255) | MRR(31) | SEL_PF(3);
++   set = K(0) | MFR(1) | MRR(6) | SEL_PF(3);
++   clrsetbits_le32(&clk->epll_con1, clr, set);
++
++   /*EPLL_CON0*/
++   set = SDIV(3) | PDIV(2) | MDIV(64) | PLL_ENABLE(1);
++   clrsetbits_le32(&clk->epll_con0, clr_pll_con0, set);
++
++   /* Wait for PLL to be locked */
++   while (!(readl(&clk->epll_con0) & PLL_LOCKED_BIT))
++       continue;
++
++
++   /**************** Set VPLL to 108MHz ****************/
++   /*VPLL_CON2*/
++   clr = BYPASS_E_V(1) | SSCG_EN(1) |
++           AFC_ENB_E_V(1) |DCC_ENB_E_V(1) ;
++   set = BYPASS_E_V(1) | SSCG_EN(1) |
++           AFC_ENB_E_V(1) |DCC_ENB_E_V(1) ;
++   clrsetbits_le32(&clk->vpll_con2, clr, set);
++
++   /*VPLL_CON1*/
++   clr = K(65535) | MFR(255) | MRR(31) | SEL_PF(3);
++   set = K(0) | MFR(1) | MRR(6) | SEL_PF(3);
++   clrsetbits_le32(&clk->vpll_con1, clr, set);
++
++   /*VPLL_CON0*/
++   set = SDIV(3) | PDIV(2) | MDIV(72) | PLL_ENABLE(1);
++   clrsetbits_le32(&clk->vpll_con0, clr_pll_con0, set);
++
++   /* Wait for PLL to be locked */
++   while (!(readl(&clk->vpll_con0) & PLL_LOCKED_BIT))
++       continue;
++
++
++   /*
++    * Step 4: Select the PLL(APLL, MPLL, EPLL, VPLL ...) output clock
++   */
++
++   /*************** Set CMU_UART0-4 clocks src MUX ***************/
++
++   /* CLK_SRC_PERIL0 */
++   clr = UART0_SEL(15) | UART1_SEL(15) | UART2_SEL(15) |
++         UART3_SEL(15) | UART4_SEL(15);
++   /*
++    * Set CLK_SRC_PERIL0 clocks src to MPLL
++    * src values: 0(XXTI); 1(XusbXTI); 2(SCLK_HDMI24M); 3(SCLK_USBPHY0);
++    *             5(SCLK_HDMIPHY); 6(SCLK_MPLL_USER_T); 7(SCLK_EPLL);
++    *             8(SCLK_VPLL)
++    *
++    * Set all to SCLK_MPLL_USER_T
++    */
++   set = UART0_SEL(6) | UART1_SEL(6) | UART2_SEL(6) | UART3_SEL(6) |
++         UART4_SEL(6);
++
++   clrsetbits_le32(&clk->src_peril0, clr, set);
++
++
++   /*************** Set CMU_LEFTBUS clocks src MUX ***************/
++   /* CLK_SRC_LEFTBUS */
++   clr = MUX_GDL_SEL(1) | MUX_MPLL_USER_SEL_L(1);
++   set = MUX_GDL_SEL(0) | MUX_MPLL_USER_SEL_L(1);
++   clrsetbits_le32(&clk->src_leftbus, clr, set);
++
++   /* Wait for mux change */
++   sdelay(0x30000);
++
++   /*************** Set CMU_RIGHTBUS clocks src MUX ***************/
++   /* CLK_SRC_RIGHTBUS */
++   clr = MUX_MPLL_USER_SEL_R(1) | MUX_GDR_SEL(1);
++   set = MUX_MPLL_USER_SEL_R(1) | MUX_GDR_SEL(0);
++   clrsetbits_le32(&clk->src_rightbus, clr, set);
++
++   /* Wait for mux change */
++   sdelay(0x30000);
++
++   /*************** Set CMU_TOP clocks src MUX ***************/
++   /* CLK_SRC_TOP0 */
++   clr = MUX_EPLL_SEL(1) | MUX_VPLL_SEL(1) | MUX_ACLK_200_SEL(1) |
++           MUX_ACLK_100_SEL(1) | MUX_ACLK_160_SEL(1) |
++           MUX_ACLK_133_SEL(1) | MUX_ONENAND_SEL(1) | MUX_ONENAND_1_SEL(1);
++   set = MUX_EPLL_SEL(1) | MUX_VPLL_SEL(1) | MUX_ACLK_200_SEL(0) |
++           MUX_ACLK_100_SEL(0) | MUX_ACLK_160_SEL(0) |
++           MUX_ACLK_133_SEL(0) | MUX_ONENAND_SEL(0) | MUX_ONENAND_1_SEL(0);
++   clrsetbits_le32(&clk->src_top0, clr, set);
++
++   /* Wait for mux change */
++   sdelay(0x30000);
++
++   /* CLK_SRC_TOP1 */
++   clr = MUX_MPLL_USER_SEL_T(1) | MUX_ACLK_400_MCUISP_SEL(1) |
++           MUX_ACLK_400_MCUISP_SUB_SEL(1) | MUX_ACLK_200_SUB_SEL(1) |
++           MUX_ACLK_266_GPS_SEL(1) | MUX_ACLK_266_GPS_SUB_SEL(1);
++
++   set = MUX_MPLL_USER_SEL_T(1) | MUX_ACLK_400_MCUISP_SEL(0) |
++           MUX_ACLK_400_MCUISP_SUB_SEL(1) | MUX_ACLK_200_SUB_SEL(1) |
++           MUX_ACLK_266_GPS_SEL(0) | MUX_ACLK_266_GPS_SUB_SEL(1);
++   clrsetbits_le32(&clk->src_top1, clr, set);
++
++   /* Wait for mux change */
++   sdelay(0x30000);
++
++   /*************** Set CMU_DMC clocks src MUX ***************/
++       /*
++        * Set CMU_DMC clocks src to MPLL
++        * Bit values:             0  ; 1
++        * MUX_C2C_SEL:      SCLKMPLL ; SCLKAPLL
++        * MUX_DMC_BUS_SEL:  SCLKMPLL ; SCLKAPLL
++        * MUX_DPHY_SEL:     SCLKMPLL ; SCLKAPLL
++        * MUX_MPLL_SEL:     FINPLL   ; MOUT_MPLL_FOUT
++        * MUX_PWI_SEL:      0110 (MPLL); 0111 (EPLL); 1000 (VPLL); 0(XXTI)
++        * MUX_G2D_ACP0_SEL: SCLKMPLL ; SCLKAPLL
++        * MUX_G2D_ACP1_SEL: SCLKEPLL ; SCLKVPLL
++        * MUX_G2D_ACP_SEL:  OUT_ACP0 ; OUT_ACP1
++       */
++   clr_src_dmc = MUX_C2C_SEL(1) | MUX_DMC_BUS_SEL(1) |
++             MUX_DPHY_SEL(1) | MUX_MPLL_SEL(1) |
++             MUX_PWI_SEL(15) | MUX_G2D_ACP0_SEL(1) |
++             MUX_G2D_ACP1_SEL(1) | MUX_G2D_ACP_SEL(1);
++   set = MUX_MPLL_SEL(1) | MUX_C2C_SEL(0) | MUX_DMC_BUS_SEL(0) |
++           MUX_DPHY_SEL(0) | MUX_PWI_SEL(6) |
++           MUX_G2D_ACP0_SEL(0) | MUX_G2D_ACP1_SEL(0) | MUX_G2D_ACP_SEL(0);
++   clrsetbits_le32(&clk->src_dmc, clr_src_dmc, set);
++
++   /* Wait for mux change */
++   while (readl(&clk->mux_stat_dmc) & MUX_STAT_DMC_CHANGING)
++       continue;
++
++   /*************** Set CMU_CPU clocks src MUX ***************/
++       /* Set CMU_CPU clocks src to APLL
++        * Bit values:             0      ;    1
++        * MUX_APLL_SEL:        FIN_PLL   ; FOUT_APLL
++        * MUX_CORE_SEL:        MOUT_APLL ; SCLK_MPLL
++        * MUX_HPM_SEL:         MOUT_APLL ; SCLK_MPLL_USER_C
++        * MUX_MPLL_USER_SEL_C: FIN_PLL   ; SCLK_MPLL
++       */
++   clr_src_cpu = MUX_APLL_SEL(1) | MUX_CORE_SEL(1) |
++                   MUX_HPM_SEL(1) | MUX_MPLL_USER_SEL_C(1);
++   set = MUX_APLL_SEL(1) | MUX_CORE_SEL(0) | MUX_HPM_SEL(0) |
++         MUX_MPLL_USER_SEL_C(1);
++   clrsetbits_le32(&clk->src_cpu, clr_src_cpu, set);
++
++   /* Wait for mux change */
++   while (readl(&clk->mux_stat_cpu) & MUX_STAT_CPU_CHANGING)
++       continue;
++}
++
++/*
++ * Set clock divisor value for booting from EMMC.
++ * Set DWMMC channel-0 clk div to operate mmc0 device at 50MHz.
++ */
++void emmc_boot_clk_div_set(void)
++{
++	; //clock already setting!
++}
++
++
++
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/clock_init_exynos4412.h u-boot-2017.03_nice/arch/arm/mach-exynos/clock_init_exynos4412.h
+--- u-boot-2017.03/arch/arm/mach-exynos/clock_init_exynos4412.h	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/clock_init_exynos4412.h	2019-05-12 17:58:19.454179733 +0800
+@@ -0,0 +1,351 @@
++/*
++ * Copyright (C) 2014 Samsung Electronics
++ * Przemyslaw Marczak <p.marczak@samsung.com>
++ *
++ * SPDX-License-Identifier:    GPL-2.0
++ */
++
++#ifndef __CLOCK_INIT_EXYNOS4412_H
++#define __CLOCK_INIT_EXYNOS4412_H
++
++/* A/M/E/V PLL_CON0 */
++#define SDIV(x)                 ((x) & 0x7)
++#define PDIV(x)                 (((x) & 0x3f) << 8)
++#define MDIV(x)                 (((x) & 0x3ff) << 16)
++#define FSEL(x)                 (((x) & 0x1) << 27)
++#define PLL_LOCKED_BIT          (0x1 << 29)
++#define PLL_ENABLE(x)           (((x) & 0x1) << 31)
++
++/* A/M PLL_CON1 */
++#define AFC(x)                 ((x) & 0xf)
++#define LOCK_CON_DLY(x)        (((x) & 0xf) << 8)
++#define LOCK_CON_IN(x)        (((x) & 0x3) << 12)
++#define LOCK_CON_OUT(x)        (((x) & 0x3) << 14)
++#define FEED_EN(x)        (((x) & 0x1) << 16)
++#define AFC_ENB(x)        (((x) & 0x1) << 20)
++#define DCC_ENB(x)        (((x) & 0x1) << 21)
++#define BYPASS(x)        (((x) & 0x1) << 22)
++#define RESV0(x)        (((x) & 0x1) << 23)
++#define RESV1(x)        (((x) & 0x1) << 24)
++
++/* E/V PLL_CON1 */
++#define K(x)                 ((x) & 0xffff)
++#define MFR(x)        (((x) & 0xff) << 16)
++#define MRR(x)        (((x) & 0x1f) << 24)
++#define SEL_PF(x)        (((x) & 0x3) << 9)
++
++/* E/V PLL_CON2 */
++#define ICP_BOOST(x)    ((x) & 0x3)
++#define FSEL_E_V(x)        (((x) & 0x1) << 2)
++#define FVCO_EN(x)        (((x) & 0x1) << 3)
++#define BYPASS_E_V(x)        (((x) & 0x1) << 4)
++#define SSCG_EN(x)        (((x) & 0x1) << 5)
++#define AFC_ENB_E_V(x)        (((x) & 0x1) << 6)
++#define DCC_ENB_E_V(x)        (((x) & 0x1) << 7)
++#define EXTAFC(x)        (((x) & 0x1f) << 8)
++
++#define PLL_LOCKTIME(x)    ((x) & 0xffff)
++
++
++/* CLK_SRC_CPU */
++#define MUX_APLL_SEL(x)         ((x) & 0x1)
++#define MUX_CORE_SEL(x)         (((x) & 0x1) << 16)
++#define MUX_HPM_SEL(x)          (((x) & 0x1) << 20)
++#define MUX_MPLL_USER_SEL_C(x)  (((x) & 0x1) << 24)
++
++#define MUX_STAT_CHANGING       0x100
++
++/* CLK_MUX_STAT_CPU */
++#define APLL_SEL(x)             ((x) & 0x7)
++#define CORE_SEL(x)             (((x) & 0x7) << 16)
++#define HPM_SEL(x)              (((x) & 0x7) << 20)
++#define MPLL_USER_SEL_C(x)      (((x) & 0x7) << 24)
++#define MUX_STAT_CPU_CHANGING   (APLL_SEL(MUX_STAT_CHANGING) | \
++               CORE_SEL(MUX_STAT_CHANGING) | \
++               HPM_SEL(MUX_STAT_CHANGING) | \
++               MPLL_USER_SEL_C(MUX_STAT_CHANGING))
++
++/* CLK_DIV_CPU0 */
++#define CORE_RATIO(x)           ((x) & 0x7)
++#define COREM0_RATIO(x)         (((x) & 0x7) << 4)
++#define COREM1_RATIO(x)         (((x) & 0x7) << 8)
++#define PERIPH_RATIO(x)         (((x) & 0x7) << 12)
++#define ATB_RATIO(x)            (((x) & 0x7) << 16)
++#define PCLK_DBG_RATIO(x)       (((x) & 0x7) << 20)
++#define APLL_RATIO(x)           (((x) & 0x7) << 24)
++#define CORE2_RATIO(x)          (((x) & 0x7) << 28)
++
++/* CLK_DIV_STAT_CPU0 */
++#define DIV_CORE(x)             ((x) & 0x1)
++#define DIV_COREM0(x)           (((x) & 0x1) << 4)
++#define DIV_COREM1(x)           (((x) & 0x1) << 8)
++#define DIV_PERIPH(x)           (((x) & 0x1) << 12)
++#define DIV_ATB(x)              (((x) & 0x1) << 16)
++#define DIV_PCLK_DBG(x)         (((x) & 0x1) << 20)
++#define DIV_APLL(x)             (((x) & 0x1) << 24)
++#define DIV_CORE2(x)            (((x) & 0x1) << 28)
++
++#define DIV_STAT_CHANGING       0x1
++#define DIV_STAT_CPU0_CHANGING  (DIV_CORE(DIV_STAT_CHANGING) | \
++               DIV_COREM0(DIV_STAT_CHANGING) | \
++               DIV_COREM1(DIV_STAT_CHANGING) | \
++               DIV_PERIPH(DIV_STAT_CHANGING) | \
++               DIV_ATB(DIV_STAT_CHANGING) | \
++               DIV_PCLK_DBG(DIV_STAT_CHANGING) | \
++               DIV_APLL(DIV_STAT_CHANGING) | \
++               DIV_CORE2(DIV_STAT_CHANGING))
++
++/* CLK_DIV_CPU1 */
++#define COPY_RATIO(x)           ((x) & 0x7)
++#define HPM_RATIO(x)            (((x) & 0x7) << 4)
++#define CORES_RATIO(x)          (((x) & 0x7) << 8)
++
++/* CLK_DIV_STAT_CPU1 */
++#define DIV_COPY(x)             ((x) & 0x7)
++#define DIV_HPM(x)              (((x) & 0x1) << 4)
++#define DIV_CORES(x)            (((x) & 0x1) << 8)
++
++#define DIV_STAT_CPU1_CHANGING (DIV_COPY(DIV_STAT_CHANGING) | \
++               DIV_HPM(DIV_STAT_CHANGING) | \
++               DIV_CORES(DIV_STAT_CHANGING))
++
++/* CLK_SRC_DMC */
++#define MUX_C2C_SEL(x)     ((x) & 0x1)
++#define MUX_DMC_BUS_SEL(x) (((x) & 0x1) << 4)
++#define MUX_DPHY_SEL(x)        (((x) & 0x1) << 8)
++#define MUX_MPLL_SEL(x)        (((x) & 0x1) << 12)
++#define MUX_PWI_SEL(x)     (((x) & 0xf) << 16)
++#define MUX_G2D_ACP0_SEL(x)    (((x) & 0x1) << 20)
++#define MUX_G2D_ACP1_SEL(x)    (((x) & 0x1) << 24)
++#define MUX_G2D_ACP_SEL(x) (((x) & 0x1) << 28)
++
++/* CLK_MUX_STAT_DMC */
++#define C2C_SEL(x)     (((x)) & 0x7)
++#define DMC_BUS_SEL(x)     (((x) & 0x7) << 4)
++#define DPHY_SEL(x)        (((x) & 0x7) << 8)
++#define MPLL_SEL(x)        (((x) & 0x7) << 12)
++/* #define PWI_SEL(x)      (((x) & 0xf) << 16)  - Reserved */
++#define G2D_ACP0_SEL(x)        (((x) & 0x7) << 20)
++#define G2D_ACP1_SEL(x)        (((x) & 0x7) << 24)
++#define G2D_ACP_SEL(x)     (((x) & 0x7) << 28)
++
++#define MUX_STAT_DMC_CHANGING  (C2C_SEL(MUX_STAT_CHANGING) | \
++               DMC_BUS_SEL(MUX_STAT_CHANGING) | \
++               DPHY_SEL(MUX_STAT_CHANGING) | \
++               MPLL_SEL(MUX_STAT_CHANGING) |\
++               G2D_ACP0_SEL(MUX_STAT_CHANGING) | \
++               G2D_ACP1_SEL(MUX_STAT_CHANGING) | \
++               G2D_ACP_SEL(MUX_STAT_CHANGING))
++
++/* CLK_DIV_DMC0 */
++#define ACP_RATIO(x)       ((x) & 0x7)
++#define ACP_PCLK_RATIO(x)  (((x) & 0x7) << 4)
++#define DPHY_RATIO(x)      (((x) & 0x7) << 8)
++#define DMC_RATIO(x)       (((x) & 0x7) << 12)
++#define DMCD_RATIO(x)      (((x) & 0x7) << 16)
++#define DMCP_RATIO(x)      (((x) & 0x7) << 20)
++
++/* CLK_DIV_STAT_DMC0 */
++#define DIV_ACP(x)     ((x) & 0x1)
++#define DIV_ACP_PCLK(x)        (((x) & 0x1) << 4)
++#define DIV_DPHY(x)        (((x) & 0x1) << 8)
++#define DIV_DMC(x)     (((x) & 0x1) << 12)
++#define DIV_DMCD(x)        (((x) & 0x1) << 16)
++#define DIV_DMCP(x)        (((x) & 0x1) << 20)
++
++#define DIV_STAT_DMC0_CHANGING (DIV_ACP(DIV_STAT_CHANGING) | \
++               DIV_ACP_PCLK(DIV_STAT_CHANGING) | \
++               DIV_DPHY(DIV_STAT_CHANGING) | \
++               DIV_DMC(DIV_STAT_CHANGING) | \
++               DIV_DMCD(DIV_STAT_CHANGING) | \
++               DIV_DMCP(DIV_STAT_CHANGING))
++
++/* CLK_DIV_DMC1 */
++#define G2D_ACP_RATIO(x)   ((x) & 0xf)
++#define C2C_RATIO(x)       (((x) & 0x7) << 4)
++#define PWI_RATIO(x)       (((x) & 0xf) << 8)
++#define C2C_ACLK_RATIO(x)  (((x) & 0x7) << 12)
++#define DVSEM_RATIO(x)     (((x) & 0x7f) << 16)
++#define DPM_RATIO(x)       (((x) & 0x7f) << 24)
++
++/* CLK_DIV_STAT_DMC1 */
++#define DIV_G2D_ACP(x)     ((x) & 0x1)
++#define DIV_C2C(x)     (((x) & 0x1) << 4)
++#define DIV_PWI(x)     (((x) & 0x1) << 8)
++#define DIV_C2C_ACLK(x)        (((x) & 0x1) << 12)
++#define DIV_DVSEM(x)       (((x) & 0x1) << 16)
++#define DIV_DPM(x)     (((x) & 0x1) << 24)
++
++#define DIV_STAT_DMC1_CHANGING (DIV_G2D_ACP(DIV_STAT_CHANGING) | \
++               DIV_C2C(DIV_STAT_CHANGING) | \
++               DIV_PWI(DIV_STAT_CHANGING) | \
++               DIV_C2C_ACLK(DIV_STAT_CHANGING) | \
++               DIV_DVSEM(DIV_STAT_CHANGING) | \
++               DIV_DPM(DIV_STAT_CHANGING))
++
++/* CLK_DIV_TOP */
++#define    ACLK_400_MCUISP_RATIO(x)    (((x) & 0x7) << 24)
++#define    ACLK_266_GPS_RATIO(x)   (((x) & 0x7) << 20)
++#define    ONENAND_RATIO(x)    (((x) & 0x7) << 16)
++#define    ACLK_133_RATIO(x)   (((x) & 0x7) << 12)
++#define ACLK_160_RATIO(x)  (((x) & 0x7) << 8)
++#define ACLK_100_RATIO(x)  (((x) & 0xf) << 4)
++#define ACLK_200_RATIO(x)  ((x) & 0x7)
++
++#define DIV_STAT_TOP_CHANGING  (ACLK_400_MCUISP_RATIO(DIV_STAT_CHANGING) | \
++               ACLK_266_GPS_RATIO(DIV_STAT_CHANGING) | \
++               ONENAND_RATIO(DIV_STAT_CHANGING) | \
++               ACLK_133_RATIO(DIV_STAT_CHANGING) | \
++               ACLK_160_RATIO(DIV_STAT_CHANGING) | \
++               ACLK_100_RATIO(DIV_STAT_CHANGING) | \
++               ACLK_200_RATIO(DIV_STAT_CHANGING))
++
++/* CLK_SRC_TOP0 */
++#define MUX_ONENAND_SEL(x)     (((x) & 0x1) << 28)
++#define MUX_ACLK_133_SEL(x)        (((x) & 0x1) << 24)
++#define MUX_ACLK_160_SEL(x)        (((x) & 0x1) << 20)
++#define MUX_ACLK_100_SEL(x)        (((x) & 0x1) << 16)
++#define MUX_ACLK_200_SEL(x)        (((x) & 0x1) << 12)
++#define MUX_VPLL_SEL(x)        (((x) & 0x1) << 8)
++#define MUX_EPLL_SEL(x)        (((x) & 0x1) << 4)
++#define MUX_ONENAND_1_SEL(x)   ((x) & 0x1)
++
++/* CLK_MUX_STAT_TOP */
++#define ONENAND_SEL(x)     (((x) & 0x3) << 28)
++#define ACLK_133_SEL(x)        (((x) & 0x3) << 24)
++#define ACLK_160_SEL(x)        (((x) & 0x3) << 20)
++#define ACLK_100_SEL(x)        (((x) & 0x3) << 16)
++#define ACLK_200_SEL(x)        (((x) & 0x3) << 12)
++#define VPLL_SEL(x)        (((x) & 0x3) << 8)
++#define EPLL_SEL(x)        (((x) & 0x3) << 4)
++#define ONENAND_1_SEL(x)   ((x) & 0x3)
++
++/* CLK_SRC_TOP1 */
++#define MUX_ACLK_400_MCUISP_SUB_SEL(x)     (((x) & 0x1) << 24)
++#define MUX_ACLK_200_SUB_SEL(x)        (((x) & 0x1) << 20)
++#define MUX_ACLK_266_GPS_SUB_SEL(x)        (((x) & 0x1) << 16)
++#define MUX_MPLL_USER_SEL_T(x)     (((x) & 0x1) << 12)
++#define MUX_ACLK_400_MCUISP_SEL(x)     (((x) & 0x1) << 8)
++#define MUX_ACLK_266_GPS_SEL(x)        (((x) & 0x1) << 4)
++
++/* CLK_MUX_STAT_TOP1 */
++#define ACLK_400_MCUISP_SUB_SEL(x)     (((x) & 0x3) << 24)
++#define ACLK_200_SUB_SEL(x)        (((x) & 0x3) << 20)
++#define ACLK_266_GPS_SUB_SEL(x)        (((x) & 0x3) << 16)
++#define MPLL_USER_SEL_T(x)     (((x) & 0x3) << 12)
++#define ACLK_400_MCUISP_SEL(x)     (((x) & 0x3) << 8)
++#define ACLK_266_GPS_SEL(x)        (((x) & 0x3) << 4)
++
++
++
++
++
++
++/*CLK_DIV_LEFTBUS*/
++#define GDL_RATIO(x)   ((x) & 0x7)
++#define GPL_RATIO(x)   (((x) & 0x7) << 4)
++
++#define DIV_STAT_LEFTBUS_CHANGING  (GDL_RATIO(DIV_STAT_CHANGING) | \
++                                       GPL_RATIO(DIV_STAT_CHANGING) )
++/* CLK_SRC_LEFTBUS */
++#define MUX_MPLL_USER_SEL_L(x)     (((x) & 0x1) << 4)
++#define MUX_GDL_SEL(x)     ((x) & 0x1)
++
++/* CLK_MUX_STAT_LEFTBUS */
++#define MPLL_USER_SEL_L(x)     (((x) & 0x3) << 4)
++#define GDL_SEL(x)     ((x) & 0x3)
++
++
++/*CLK_DIV_RIGHTBUS*/
++#define GDR_RATIO(x)   ((x) & 0x7)
++#define GPR_RATIO(x)   (((x) & 0x7) << 4)
++
++#define DIV_STAT_RIGHTBUS_CHANGING (GDR_RATIO(DIV_STAT_CHANGING) | \
++                               GPR_RATIO(DIV_STAT_CHANGING) )
++
++/* CLK_SRC_RIGHTBUS */
++#define MUX_MPLL_USER_SEL_R(x)     (((x) & 0x1) << 4)
++#define MUX_GDR_SEL(x)     ((x) & 0x1)
++
++/* CLK_MUX_STAT_RIGHTBUS */
++#define MPLL_USER_SEL_R(x)     (((x) & 0x3) << 4)
++#define GDR_SEL(x)     ((x) & 0x3)
++
++
++
++
++/* Set CLK_SRC_PERIL0 */
++#define UART4_SEL(x)       (((x) & 0xf) << 16)
++#define UART3_SEL(x)       (((x) & 0xf) << 12)
++#define UART2_SEL(x)       (((x) & 0xf) << 8)
++#define UART1_SEL(x)       (((x) & 0xf) << 4)
++#define UART0_SEL(x)       ((x) & 0xf)
++
++/* Set CLK_DIV_PERIL0 */
++#define UART4_RATIO(x)     (((x) & 0xf) << 16)
++#define UART3_RATIO(x)     (((x) & 0xf) << 12)
++#define UART2_RATIO(x)     (((x) & 0xf) << 8)
++#define UART1_RATIO(x)     (((x) & 0xf) << 4)
++#define UART0_RATIO(x)     ((x) & 0xf)
++
++/* Set CLK_DIV_STAT_PERIL0 */
++#define DIV_UART4(x)       (((x) & 0x1) << 16)
++#define DIV_UART3(x)       (((x) & 0x1) << 12)
++#define DIV_UART2(x)       (((x) & 0x1) << 8)
++#define DIV_UART1(x)       (((x) & 0x1) << 4)
++#define DIV_UART0(x)       ((x) & 0x1)
++
++#define DIV_STAT_PERIL0_CHANGING   (DIV_UART4(DIV_STAT_CHANGING) | \
++                   DIV_UART3(DIV_STAT_CHANGING) | \
++                   DIV_UART2(DIV_STAT_CHANGING) | \
++                   DIV_UART1(DIV_STAT_CHANGING) | \
++                   DIV_UART0(DIV_STAT_CHANGING))
++
++/* CLK_DIV_FSYS1 */
++#define MMC0_RATIO(x)      ((x) & 0xf)
++#define MMC0_PRE_RATIO(x)  (((x) & 0xff) << 8)
++#define MMC1_RATIO(x)      (((x) & 0xf) << 16)
++#define MMC1_PRE_RATIO(x)  (((x) & 0xff) << 24)
++
++/* CLK_DIV_STAT_FSYS1 */
++#define DIV_MMC0(x)        ((x) & 1)
++#define DIV_MMC0_PRE(x)        (((x) & 1) << 8)
++#define DIV_MMC1(x)        (((x) & 1) << 16)
++#define DIV_MMC1_PRE(x)        (((x) & 1) << 24)
++
++#define DIV_STAT_FSYS1_CHANGING        (DIV_MMC0(DIV_STAT_CHANGING) | \
++                   DIV_MMC0_PRE(DIV_STAT_CHANGING) | \
++                   DIV_MMC1(DIV_STAT_CHANGING) | \
++                   DIV_MMC1_PRE(DIV_STAT_CHANGING))
++
++/* CLK_DIV_FSYS2 */
++#define MMC2_RATIO(x)      ((x) & 0xf)
++#define MMC2_PRE_RATIO(x)  (((x) & 0xff) << 8)
++#define MMC3_RATIO(x)      (((x) & 0xf) << 16)
++#define MMC3_PRE_RATIO(x)  (((x) & 0xff) << 24)
++
++/* CLK_DIV_STAT_FSYS2 */
++#define DIV_MMC2(x)        ((x) & 0x1)
++#define DIV_MMC2_PRE(x)        (((x) & 0x1) << 8)
++#define DIV_MMC3(x)        (((x) & 0x1) << 16)
++#define DIV_MMC3_PRE(x)        (((x) & 0x1) << 24)
++
++#define DIV_STAT_FSYS2_CHANGING        (DIV_MMC2(DIV_STAT_CHANGING) | \
++                   DIV_MMC2_PRE(DIV_STAT_CHANGING) | \
++                   DIV_MMC3(DIV_STAT_CHANGING) | \
++                   DIV_MMC3_PRE(DIV_STAT_CHANGING))
++
++/* CLK_DIV_FSYS3 */
++#define MMC4_RATIO(x)      ((x) & 0x7)
++#define MMC4_PRE_RATIO(x)  (((x) & 0xff) << 8)
++
++/* CLK_DIV_STAT_FSYS3 */
++#define DIV_MMC4(x)        ((x) & 0x1)
++#define DIV_MMC4_PRE(x)        (((x) & 0x1) << 8)
++
++#define DIV_STAT_FSYS3_CHANGING        (DIV_MMC4(DIV_STAT_CHANGING) | \
++                   DIV_MMC4_PRE(DIV_STAT_CHANGING))
++
++
++#endif
++
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/dmc_init_exynos4412.c u-boot-2017.03_nice/arch/arm/mach-exynos/dmc_init_exynos4412.c
+--- u-boot-2017.03/arch/arm/mach-exynos/dmc_init_exynos4412.c	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/dmc_init_exynos4412.c	2019-05-24 20:30:03.360558027 +0800
+@@ -0,0 +1,231 @@
++/*
++ * Memory setup for board based on EXYNOS4412
++ *
++ * Copyright (C) 2013 Samsung Electronics
++ * Rajeshwari Shinde <rajeshwari.s@samsung.com>
++ *
++ * See file CREDITS for list of people who contributed to this
++ * project.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; either version 2 of
++ * the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston,
++ * MA 02111-1307 USA
++ */
++
++#include <config.h>
++#include <asm/arch/dmc.h>
++#include "common_setup.h"
++#include <debug_uart.h>
++#include "exynos4412_setup.h"
++
++struct mem_timings mem = {
++	.direct_cmd_msr = {
++		DIRECT_CMD1, DIRECT_CMD2, DIRECT_CMD3, DIRECT_CMD4
++	},
++	.timingref = TIMINGREF_VAL,
++	.timingrow = TIMINGROW_VAL,
++	.timingdata = TIMINGDATA_VAL,
++	.timingpower = TIMINGPOWER_VAL,
++	.zqcontrol = ZQ_CONTROL_VAL,
++	.control0 = CONTROL0_VAL,
++	.control1 = CONTROL1_VAL,
++	.control2 = CONTROL2_VAL,
++	.concontrol = CONCONTROL_VAL,
++	.prechconfig = PRECHCONFIG,
++	.memcontrol = MEMCONTROL_VAL,
++	.memconfig0 = MEMCONFIG0_VAL,
++	.memconfig1 = MEMCONFIG1_VAL,
++	.dll_resync = FORCE_DLL_RESYNC,
++	.dll_on = DLL_CONTROL_ON,
++};
++static void phy_control_reset(int ctrl_no, struct exynos4_dmc *dmc)
++{
++	if (ctrl_no) {
++		writel((mem.control1 | (1 << mem.dll_resync)),
++		       &dmc->phycontrol1);
++		writel((mem.control1 | (0 << mem.dll_resync)),
++		       &dmc->phycontrol1);
++	} else {
++		writel((mem.control0 | (0 << mem.dll_on)),
++		       &dmc->phycontrol0);
++		writel((mem.control0 | (1 << mem.dll_on)),
++		       &dmc->phycontrol0);
++	}
++}
++
++static void dmc_config_mrs(struct exynos4_dmc *dmc, int chip)
++{
++	int i;
++	unsigned long mask = 0;
++
++	if (chip)
++		mask = DIRECT_CMD_CHIP1_SHIFT;
++
++	for (i = 0; i < MEM_TIMINGS_MSR_COUNT; i++) {
++		writel(mem.direct_cmd_msr[i] | mask,
++		       &dmc->directcmd);
++	}
++}
++
++static void dmc_init(struct exynos4_dmc *dmc)
++{
++	/*
++	 * DLL Parameter Setting:
++	 * Termination: Enable R/W
++	 * Phase Delay for DQS Cleaning: 180' Shift
++	 */
++	writel(mem.control1, &dmc->phycontrol1);
++
++	/*
++	 * ZQ Calibration
++	 * Termination: Disable
++	 * Auto Calibration Start: Enable
++	 */
++	writel(mem.zqcontrol, &dmc->phyzqcontrol);
++	sdelay(0x100000);
++
++	/*
++	 * Update DLL Information:
++	 * Force DLL Resyncronization
++	 */
++	phy_control_reset(1, dmc);
++	phy_control_reset(0, dmc);
++
++	/* Set DLL Parameters */
++	writel(mem.control1, &dmc->phycontrol1);
++
++	/* DLL Start */
++	writel((mem.control0 | CTRL_START | CTRL_DLL_ON), &dmc->phycontrol0);
++
++	writel(mem.control2, &dmc->phycontrol2);
++
++	/* Set Clock Ratio of Bus clock to Memory Clock */
++	writel(mem.concontrol, &dmc->concontrol);
++
++	/*
++	 * Memor Burst length: 8
++	 * Number of chips: 2
++	 * Memory Bus width: 32 bit
++	 * Memory Type: DDR3
++	 * Additional Latancy for PLL: 1 Cycle
++	 */
++	writel(mem.memcontrol, &dmc->memcontrol);
++
++	writel(mem.memconfig0, &dmc->memconfig0);
++	writel(mem.memconfig1, &dmc->memconfig1);
++
++#ifdef CONFIG_TINY4412
++	writel(0x8000001f, &dmc->ivcontrol);
++#endif	
++
++	/* Config Precharge Policy */
++	writel(mem.prechconfig, &dmc->prechconfig);
++	/*
++	 * TimingAref, TimingRow, TimingData, TimingPower Setting:
++	 * Values as per Memory AC Parameters
++	 */
++	writel(mem.timingref, &dmc->timingref);
++	writel(mem.timingrow, &dmc->timingrow);
++	writel(mem.timingdata, &dmc->timingdata);
++	writel(mem.timingpower, &dmc->timingpower);
++
++	/* Chip0: NOP Command: Assert and Hold CKE to high level */
++	writel(DIRECT_CMD_NOP, &dmc->directcmd);
++	sdelay(0x100000);
++
++	/* Chip0: EMRS2, EMRS3, EMRS, MRS Commands Using Direct Command */
++	dmc_config_mrs(dmc, 0);
++	sdelay(0x100000);
++
++	/* Chip0: ZQINIT */
++	writel(DIRECT_CMD_ZQ, &dmc->directcmd);
++	sdelay(0x100000);
++
++	writel((DIRECT_CMD_NOP | DIRECT_CMD_CHIP1_SHIFT), &dmc->directcmd);
++	sdelay(0x100000);
++
++	/* Chip1: EMRS2, EMRS3, EMRS, MRS Commands Using Direct Command */
++	dmc_config_mrs(dmc, 1);
++	sdelay(0x100000);
++
++	/* Chip1: ZQINIT */
++	writel((DIRECT_CMD_ZQ | DIRECT_CMD_CHIP1_SHIFT), &dmc->directcmd);
++	sdelay(0x100000);
++
++	phy_control_reset(1, dmc);
++	sdelay(0x100000);
++
++	/* turn on DREX0, DREX1 */
++	writel((mem.concontrol | AREF_EN), &dmc->concontrol);
++}
++
++void mem_ctrl_init(int reset)
++{
++	struct exynos4_dmc *dmc;
++
++	/*
++	 * Async bridge configuration at CPU_core:
++	 * 1: half_sync
++	 * 0: full_sync
++	 */
++	writel(1, ASYNC_CONFIG);
++
++#ifndef CONFIG_TINY4412	
++	#ifdef CONFIG_ORIGEN
++		/* Interleave: 2Bit, Interleave_bit1: 0x15, Interleave_bit0: 0x7 */
++		writel(APB_SFR_INTERLEAVE_CONF_VAL, EXYNOS4_MIU_BASE +
++			APB_SFR_INTERLEAVE_CONF_OFFSET);
++		/* Update MIU Configuration */
++		writel(APB_SFR_ARBRITATION_CONF_VAL, EXYNOS4_MIU_BASE +
++			APB_SFR_ARBRITATION_CONF_OFFSET);
++	#else
++		writel(APB_SFR_INTERLEAVE_CONF_VAL, EXYNOS4_MIU_BASE +
++			APB_SFR_INTERLEAVE_CONF_OFFSET);
++		writel(INTERLEAVE_ADDR_MAP_START_ADDR, EXYNOS4_MIU_BASE +
++			ABP_SFR_INTERLEAVE_ADDRMAP_START_OFFSET);
++		writel(INTERLEAVE_ADDR_MAP_END_ADDR, EXYNOS4_MIU_BASE +
++			ABP_SFR_INTERLEAVE_ADDRMAP_END_OFFSET);
++		writel(INTERLEAVE_ADDR_MAP_EN, EXYNOS4_MIU_BASE +
++			ABP_SFR_SLV_ADDRMAP_CONF_OFFSET);	
++		#ifdef CONFIG_MIU_LINEAR
++			writel(SLAVE0_SINGLE_ADDR_MAP_START_ADDR, EXYNOS4_MIU_BASE +
++				ABP_SFR_SLV0_SINGLE_ADDRMAP_START_OFFSET);
++			writel(SLAVE0_SINGLE_ADDR_MAP_END_ADDR, EXYNOS4_MIU_BASE +
++				ABP_SFR_SLV0_SINGLE_ADDRMAP_END_OFFSET);
++			writel(SLAVE1_SINGLE_ADDR_MAP_START_ADDR, EXYNOS4_MIU_BASE +
++				ABP_SFR_SLV1_SINGLE_ADDRMAP_START_OFFSET);
++			writel(SLAVE1_SINGLE_ADDR_MAP_END_ADDR, EXYNOS4_MIU_BASE +
++				ABP_SFR_SLV1_SINGLE_ADDRMAP_END_OFFSET);
++			writel(APB_SFR_SLV_ADDR_MAP_CONF_VAL, EXYNOS4_MIU_BASE +
++				ABP_SFR_SLV_ADDRMAP_CONF_OFFSET);
++		#endif
++	#endif
++#endif
++	
++
++	/* DMC0 */
++	dmc = (struct exynos4_dmc *)samsung_get_base_dmc_ctrl();
++	dmc_init(dmc);
++	
++	/* DMC1 */
++	dmc = (struct exynos4_dmc *)(samsung_get_base_dmc_ctrl()
++					+ DMC_OFFSET);
++	dmc_init(dmc);
++
++
++}
++
++
++
++
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/exynos4412_setup.h u-boot-2017.03_nice/arch/arm/mach-exynos/exynos4412_setup.h
+--- u-boot-2017.03/arch/arm/mach-exynos/exynos4412_setup.h	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/exynos4412_setup.h	2019-05-12 17:59:06.646035791 +0800
+@@ -0,0 +1,578 @@
++/*
++ * Machine Specific Values for EXYNOS4012 based board
++ *
++ * Copyright (C) 2011 Samsung Electronics
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef _EXYNOS4412_SETUP_H
++#define _EXYNOS4412_SETUP_H
++
++#include <config.h>
++#include <asm/arch/cpu.h>
++
++#ifdef CONFIG_CLK_800_330_165
++#define DRAM_CLK_330
++#endif
++#ifdef CONFIG_CLK_1000_200_200
++#define DRAM_CLK_200
++#endif
++#ifdef CONFIG_CLK_1000_330_165
++#define DRAM_CLK_330
++#endif
++#ifdef CONFIG_CLK_1000_400_200
++#define DRAM_CLK_400
++#endif
++
++/* Bus Configuration Register Address */
++#define ASYNC_CONFIG		0x10010350
++
++/* CLK_SRC_CPU */
++#define MUX_HPM_SEL_MOUTAPLL		0x0
++#define MUX_HPM_SEL_SCLKMPLL		0x1
++#define MUX_CORE_SEL_MOUTAPLL		0x0
++#define MUX_CORE_SEL_SCLKMPLL		0x1
++#define MUX_MPLL_SEL_FILPLL		0x0
++#define MUX_MPLL_SEL_MOUTMPLLFOUT	0x1
++#define MUX_APLL_SEL_FILPLL		0x0
++#define MUX_APLL_SEL_MOUTMPLLFOUT	0x1
++#define CLK_SRC_CPU_VAL			((MUX_HPM_SEL_MOUTAPLL << 20) \
++					| (MUX_CORE_SEL_MOUTAPLL << 16) \
++					| (MUX_MPLL_SEL_MOUTMPLLFOUT << 8)\
++					| (MUX_APLL_SEL_MOUTMPLLFOUT << 0))
++
++/* CLK_DIV_CPU0 */
++#define APLL_RATIO		0x0
++#define PCLK_DBG_RATIO		0x1
++#define ATB_RATIO		0x3
++#define PERIPH_RATIO		0x3
++#define COREM1_RATIO		0x7
++#define COREM0_RATIO		0x3
++#define CORE_RATIO		0x0
++#define CLK_DIV_CPU0_VAL	((APLL_RATIO << 24) \
++				| (PCLK_DBG_RATIO << 20) \
++				| (ATB_RATIO << 16) \
++				| (PERIPH_RATIO << 12) \
++				| (COREM1_RATIO << 8) \
++				| (COREM0_RATIO << 4) \
++				| (CORE_RATIO << 0))
++
++/* CLK_DIV_CPU1 */
++#define HPM_RATIO		0x0
++#define COPY_RATIO		0x3
++#define CLK_DIV_CPU1_VAL	((HPM_RATIO << 4) | (COPY_RATIO))
++
++/* CLK_SRC_DMC */
++#define MUX_PWI_SEL_XXTI		0x0
++#define MUX_PWI_SEL_XUSBXTI		0x1
++#define MUX_PWI_SEL_SCLK_HDMI24M	0x2
++#define MUX_PWI_SEL_SCLK_USBPHY0	0x3
++#define MUX_PWI_SEL_SCLK_USBPHY1	0x4
++#define MUX_PWI_SEL_SCLK_HDMIPHY	0x5
++#define MUX_PWI_SEL_SCLKMPLL		0x6
++#define MUX_PWI_SEL_SCLKEPLL		0x7
++#define MUX_PWI_SEL_SCLKVPLL		0x8
++#define MUX_DPHY_SEL_SCLKMPLL		0x0
++#define MUX_DPHY_SEL_SCLKAPLL		0x1
++#define MUX_DMC_BUS_SEL_SCLKMPLL	0x0
++#define MUX_DMC_BUS_SEL_SCLKAPLL	0x1
++#define CLK_SRC_DMC_VAL			((MUX_PWI_SEL_XUSBXTI << 16) \
++					| (MUX_DPHY_SEL_SCLKMPLL << 8) \
++					| (MUX_DMC_BUS_SEL_SCLKMPLL << 4))
++
++/* CLK_DIV_DMC0 */
++#define CORE_TIMERS_RATIO	0x1
++#define COPY2_RATIO		0x3
++#define DMCP_RATIO		0x1
++#define DMCD_RATIO		0x1
++#define DMC_RATIO		0x1
++#define DPHY_RATIO		0x1
++#define ACP_PCLK_RATIO		0x1
++#define ACP_RATIO		0x3
++#define CLK_DIV_DMC0_VAL	((CORE_TIMERS_RATIO << 28) \
++				| (COPY2_RATIO << 24) \
++				| (DMCP_RATIO << 20) \
++				| (DMCD_RATIO << 16) \
++				| (DMC_RATIO << 12) \
++				| (DPHY_RATIO << 8) \
++				| (ACP_PCLK_RATIO << 4)	\
++				| (ACP_RATIO << 0))
++
++/* CLK_DIV_DMC1 */
++#define DPM_RATIO		0x1
++#define DVSEM_RATIO		0x1
++#define PWI_RATIO		0x1
++#define CLK_DIV_DMC1_VAL	((DPM_RATIO << 24) \
++				| (DVSEM_RATIO << 16) \
++				| (PWI_RATIO << 8))
++
++/* CLK_SRC_TOP0 */
++#define MUX_ONENAND_SEL_ACLK_133	0x0
++#define MUX_ONENAND_SEL_ACLK_160	0x1
++#define MUX_ACLK_133_SEL_SCLKMPLL	0x0
++#define MUX_ACLK_133_SEL_SCLKAPLL	0x1
++#define MUX_ACLK_160_SEL_SCLKMPLL	0x0
++#define MUX_ACLK_160_SEL_SCLKAPLL	0x1
++#define MUX_ACLK_100_SEL_SCLKMPLL	0x0
++#define MUX_ACLK_100_SEL_SCLKAPLL	0x1
++#define MUX_ACLK_200_SEL_SCLKMPLL	0x0
++#define MUX_ACLK_200_SEL_SCLKAPLL	0x1
++#define MUX_VPLL_SEL_FINPLL		0x0
++#define MUX_VPLL_SEL_FOUTVPLL		0x1
++#define MUX_EPLL_SEL_FINPLL		0x0
++#define MUX_EPLL_SEL_FOUTEPLL		0x1
++#define MUX_ONENAND_1_SEL_MOUTONENAND	0x0
++#define MUX_ONENAND_1_SEL_SCLKVPLL	0x1
++#define CLK_SRC_TOP0_VAL		((MUX_ONENAND_SEL_ACLK_133 << 28) \
++					| (MUX_ACLK_133_SEL_SCLKMPLL << 24) \
++					| (MUX_ACLK_160_SEL_SCLKMPLL << 20) \
++					| (MUX_ACLK_100_SEL_SCLKMPLL << 16) \
++					| (MUX_ACLK_200_SEL_SCLKMPLL << 12) \
++					| (MUX_VPLL_SEL_FINPLL << 8) \
++					| (MUX_EPLL_SEL_FINPLL << 4)\
++					| (MUX_ONENAND_1_SEL_MOUTONENAND << 0))
++
++/* CLK_SRC_TOP1 */
++#define VPLLSRC_SEL_FINPLL	0x0
++#define VPLLSRC_SEL_SCLKHDMI24M	0x1
++#define CLK_SRC_TOP1_VAL	(VPLLSRC_SEL_FINPLL)
++
++/* CLK_DIV_TOP */
++#define ONENAND_RATIO		0x0
++#define ACLK_133_RATIO		0x5
++#define ACLK_160_RATIO		0x4
++#define ACLK_100_RATIO		0x7
++#define ACLK_200_RATIO		0x3
++#define CLK_DIV_TOP_VAL		((ONENAND_RATIO << 16)	\
++				| (ACLK_133_RATIO << 12)\
++				| (ACLK_160_RATIO << 8)	\
++				| (ACLK_100_RATIO << 4)	\
++				| (ACLK_200_RATIO << 0))
++
++/* CLK_SRC_LEFTBUS */
++#define MUX_GDL_SEL_SCLKMPLL	0x0
++#define MUX_GDL_SEL_SCLKAPLL	0x1
++#define CLK_SRC_LEFTBUS_VAL	(MUX_GDL_SEL_SCLKMPLL)
++
++/* CLK_DIV_LEFTBUS */
++#define GPL_RATIO		0x1
++#define GDL_RATIO		0x3
++#define CLK_DIV_LEFTBUS_VAL	((GPL_RATIO << 4) | (GDL_RATIO))
++
++/* CLK_SRC_RIGHTBUS */
++#define MUX_GDR_SEL_SCLKMPLL	0x0
++#define MUX_GDR_SEL_SCLKAPLL	0x1
++#define CLK_SRC_RIGHTBUS_VAL	(MUX_GDR_SEL_SCLKMPLL)
++
++/* CLK_DIV_RIGHTBUS */
++#define GPR_RATIO		0x1
++#define GDR_RATIO		0x3
++#define CLK_DIV_RIGHTBUS_VAL	((GPR_RATIO << 4) | (GDR_RATIO))
++
++/* CLK_SRS_FSYS: 6 = SCLKMPLL */
++#define SATA_SEL_SCLKMPLL	0
++#define SATA_SEL_SCLKAPLL	1
++
++#define MMC_SEL_XXTI		0
++#define MMC_SEL_XUSBXTI		1
++#define MMC_SEL_SCLK_HDMI24M	2
++#define MMC_SEL_SCLK_USBPHY0	3
++#define MMC_SEL_SCLK_USBPHY1	4
++#define MMC_SEL_SCLK_HDMIPHY	5
++#define MMC_SEL_SCLKMPLL	6
++#define MMC_SEL_SCLKEPLL	7
++#define MMC_SEL_SCLKVPLL	8
++
++#define MMCC0_SEL		MMC_SEL_SCLKMPLL
++#define MMCC1_SEL		MMC_SEL_SCLKMPLL
++#define MMCC2_SEL		MMC_SEL_SCLKMPLL
++#define MMCC3_SEL		MMC_SEL_SCLKMPLL
++#define MMCC4_SEL		MMC_SEL_SCLKMPLL
++#define CLK_SRC_FSYS_VAL	((SATA_SEL_SCLKMPLL << 24) \
++				| (MMCC4_SEL << 16) \
++				| (MMCC3_SEL << 12) \
++				| (MMCC2_SEL << 8) \
++				| (MMCC1_SEL << 4) \
++				| (MMCC0_SEL << 0))
++
++/* SCLK_MMC[0-4] = MOUTMMC[0-4]/(MMC[0-4]_RATIO + 1)/(MMC[0-4]_PRE_RATIO +1) */
++/* CLK_DIV_FSYS1 */
++#define MMC0_RATIO		0xF
++#define MMC0_PRE_RATIO		0x0
++#define MMC1_RATIO		0xF
++#define MMC1_PRE_RATIO		0x0
++#define CLK_DIV_FSYS1_VAL	((MMC1_PRE_RATIO << 24) \
++				| (MMC1_RATIO << 16) \
++				| (MMC0_PRE_RATIO << 8) \
++				| (MMC0_RATIO << 0))
++
++/* CLK_DIV_FSYS2 */
++#define MMC2_RATIO		0xF
++#define MMC2_PRE_RATIO		0x0
++#define MMC3_RATIO		0xF
++#define MMC3_PRE_RATIO		0x0
++#define CLK_DIV_FSYS2_VAL	((MMC3_PRE_RATIO << 24) \
++				| (MMC3_RATIO << 16) \
++				| (MMC2_PRE_RATIO << 8) \
++				| (MMC2_RATIO << 0))
++
++/* CLK_DIV_FSYS3 */
++#define MMC4_RATIO		0xF
++#define MMC4_PRE_RATIO		0x0
++#define CLK_DIV_FSYS3_VAL	((MMC4_PRE_RATIO << 8) \
++				| (MMC4_RATIO << 0))
++
++/* CLK_SRC_PERIL0 */
++#define UART_SEL_XXTI		0
++#define UART_SEL_XUSBXTI	1
++#define UART_SEL_SCLK_HDMI24M	2
++#define UART_SEL_SCLK_USBPHY0	3
++#define UART_SEL_SCLK_USBPHY1	4
++#define UART_SEL_SCLK_HDMIPHY	5
++#define UART_SEL_SCLKMPLL	6
++#define UART_SEL_SCLKEPLL	7
++#define UART_SEL_SCLKVPLL	8
++
++#define UART0_SEL		UART_SEL_SCLKMPLL
++#define UART1_SEL		UART_SEL_SCLKMPLL
++#define UART2_SEL		UART_SEL_SCLKMPLL
++#define UART3_SEL		UART_SEL_SCLKMPLL
++#define UART4_SEL		UART_SEL_SCLKMPLL
++#define CLK_SRC_PERIL0_VAL	((UART4_SEL << 16) \
++				| (UART3_SEL << 12) \
++				| (UART2_SEL << 8) \
++				| (UART1_SEL << 4) \
++				| (UART0_SEL << 0))
++
++/* SCLK_UART[0-4] = MOUTUART[0-4]/(UART[0-4]_RATIO + 1) */
++/* CLK_DIV_PERIL0 */
++#define UART0_RATIO		7
++#define UART1_RATIO		7
++#define UART2_RATIO		7
++#define UART3_RATIO		7
++#define UART4_RATIO		7
++#define CLK_DIV_PERIL0_VAL	((UART4_RATIO << 16) \
++				| (UART3_RATIO << 12) \
++				| (UART2_RATIO << 8) \
++				| (UART1_RATIO << 4) \
++				| (UART0_RATIO << 0))
++
++/* Clock Source CAM/FIMC */
++/* CLK_SRC_CAM */
++#define CAM0_SEL_XUSBXTI	1
++#define CAM1_SEL_XUSBXTI	1
++#define CSIS0_SEL_XUSBXTI	1
++#define CSIS1_SEL_XUSBXTI	1
++
++#define FIMC_SEL_SCLKMPLL	6
++#define FIMC0_LCLK_SEL		FIMC_SEL_SCLKMPLL
++#define FIMC1_LCLK_SEL		FIMC_SEL_SCLKMPLL
++#define FIMC2_LCLK_SEL		FIMC_SEL_SCLKMPLL
++#define FIMC3_LCLK_SEL		FIMC_SEL_SCLKMPLL
++
++#define CLK_SRC_CAM_VAL		((CSIS1_SEL_XUSBXTI << 28) \
++				| (CSIS0_SEL_XUSBXTI << 24) \
++				| (CAM1_SEL_XUSBXTI << 20) \
++				| (CAM0_SEL_XUSBXTI << 16) \
++				| (FIMC3_LCLK_SEL << 12) \
++				| (FIMC2_LCLK_SEL << 8) \
++				| (FIMC1_LCLK_SEL << 4) \
++				| (FIMC0_LCLK_SEL << 0))
++
++/* SCLK CAM */
++/* CLK_DIV_CAM */
++#define FIMC0_LCLK_RATIO	4
++#define FIMC1_LCLK_RATIO	4
++#define FIMC2_LCLK_RATIO	4
++#define FIMC3_LCLK_RATIO	4
++#define CLK_DIV_CAM_VAL		((FIMC3_LCLK_RATIO << 12) \
++				| (FIMC2_LCLK_RATIO << 8) \
++				| (FIMC1_LCLK_RATIO << 4) \
++				| (FIMC0_LCLK_RATIO << 0))
++
++/* SCLK MFC */
++/* CLK_SRC_MFC */
++#define MFC_SEL_MPLL		0
++#define MOUTMFC_0		0
++#define MFC_SEL			MOUTMFC_0
++#define MFC_0_SEL		MFC_SEL_MPLL
++#define CLK_SRC_MFC_VAL		((MFC_SEL << 8) | (MFC_0_SEL))
++
++
++/* CLK_DIV_MFC */
++#define MFC_RATIO		3
++#define CLK_DIV_MFC_VAL		(MFC_RATIO)
++
++/* SCLK G3D */
++/* CLK_SRC_G3D */
++#define G3D_SEL_MPLL		0
++#define MOUTG3D_0		0
++#define G3D_SEL			MOUTG3D_0
++#define G3D_0_SEL		G3D_SEL_MPLL
++#define CLK_SRC_G3D_VAL		((G3D_SEL << 8) | (G3D_0_SEL))
++
++/* CLK_DIV_G3D */
++#define G3D_RATIO		1
++#define CLK_DIV_G3D_VAL		(G3D_RATIO)
++
++/* SCLK LCD0 */
++/* CLK_SRC_LCD0 */
++#define FIMD_SEL_SCLKMPLL	6
++#define MDNIE0_SEL_XUSBXTI	1
++#define MDNIE_PWM0_SEL_XUSBXTI	1
++#define MIPI0_SEL_XUSBXTI	1
++#define CLK_SRC_LCD0_VAL	((MIPI0_SEL_XUSBXTI << 12) \
++				| (MDNIE_PWM0_SEL_XUSBXTI << 8) \
++				| (MDNIE0_SEL_XUSBXTI << 4) \
++				| (FIMD_SEL_SCLKMPLL << 0))
++
++/* CLK_DIV_LCD0 */
++#define FIMD0_RATIO		4
++#define CLK_DIV_LCD0_VAL	(FIMD0_RATIO)
++
++/* Required period to generate a stable clock output */
++/* PLL_LOCK_TIME */
++#define PLL_LOCKTIME		0x1C20
++
++/* PLL Values */
++#define DISABLE			0
++#define ENABLE			1
++#define SET_PLL(mdiv, pdiv, sdiv)	((ENABLE << 31)\
++					| (mdiv << 16) \
++					| (pdiv << 8) \
++					| (sdiv << 0))
++
++/* APLL_CON0 */
++#define APLL_MDIV		0xFA
++#define APLL_PDIV		0x6
++#define APLL_SDIV		0x1
++#define APLL_CON0_VAL		SET_PLL(APLL_MDIV, APLL_PDIV, APLL_SDIV)
++
++/* APLL_CON1 */
++#define APLL_AFC_ENB		0x1
++#define APLL_AFC		0xC
++#define APLL_CON1_VAL		((APLL_AFC_ENB << 31) | (APLL_AFC << 0))
++
++/* MPLL_CON0 */
++#define MPLL_MDIV		0xC8
++#define MPLL_PDIV		0x6
++#define MPLL_SDIV		0x1
++#define MPLL_CON0_VAL		SET_PLL(MPLL_MDIV, MPLL_PDIV, MPLL_SDIV)
++
++/* MPLL_CON1 */
++#define MPLL_AFC_ENB		0x0
++#define MPLL_AFC		0x1C
++#define MPLL_CON1_VAL		((MPLL_AFC_ENB << 31) | (MPLL_AFC << 0))
++
++/* EPLL_CON0 */
++#define EPLL_MDIV		0x30
++#define EPLL_PDIV		0x3
++#define EPLL_SDIV		0x2
++#define EPLL_CON0_VAL		SET_PLL(EPLL_MDIV, EPLL_PDIV, EPLL_SDIV)
++
++/* EPLL_CON1 */
++#define EPLL_K			0x0
++#define EPLL_CON1_VAL		(EPLL_K >> 0)
++
++/* VPLL_CON0 */
++#define VPLL_MDIV		0x35
++#define VPLL_PDIV		0x3
++#define VPLL_SDIV		0x2
++#define VPLL_CON0_VAL		SET_PLL(VPLL_MDIV, VPLL_PDIV, VPLL_SDIV)
++
++/* VPLL_CON1 */
++#define VPLL_SSCG_EN		DISABLE
++#define VPLL_SEL_PF_DN_SPREAD	0x0
++#define VPLL_MRR		0x11
++#define VPLL_MFR		0x0
++#define VPLL_K			0x400
++#define VPLL_CON1_VAL		((VPLL_SSCG_EN << 31)\
++				| (VPLL_SEL_PF_DN_SPREAD << 29) \
++				| (VPLL_MRR << 24) \
++				| (VPLL_MFR << 16) \
++				| (VPLL_K << 0))
++
++/* DMC */
++#define DIRECT_CMD_NOP	0x07000000
++#define DIRECT_CMD_ZQ	0x0a000000
++#define DIRECT_CMD_CHIP1_SHIFT	(1 << 20)
++#define MEM_TIMINGS_MSR_COUNT	4
++#define CTRL_START	(1 << 0)
++#define CTRL_DLL_ON	(1 << 1)
++#define AREF_EN		(1 << 5)
++#define DRV_TYPE	(1 << 6)
++
++struct mem_timings {
++	unsigned direct_cmd_msr[MEM_TIMINGS_MSR_COUNT];
++	unsigned timingref;
++	unsigned timingrow;
++	unsigned timingdata;
++	unsigned timingpower;
++	unsigned zqcontrol;
++	unsigned control0;
++	unsigned control1;
++	unsigned control2;
++	unsigned concontrol;
++	unsigned prechconfig;
++	unsigned memcontrol;
++	unsigned memconfig0;
++	unsigned memconfig1;
++	unsigned dll_resync;
++	unsigned dll_on;
++};
++
++/* MIU */
++/* MIU Config Register Offsets*/
++#define APB_SFR_INTERLEAVE_CONF_OFFSET	0x400
++#define APB_SFR_ARBRITATION_CONF_OFFSET	0xC00
++#define ABP_SFR_SLV_ADDRMAP_CONF_OFFSET	0x800
++#define ABP_SFR_INTERLEAVE_ADDRMAP_START_OFFSET	0x808
++#define ABP_SFR_INTERLEAVE_ADDRMAP_END_OFFSET	0x810
++#define ABP_SFR_SLV0_SINGLE_ADDRMAP_START_OFFSET	0x818
++#define ABP_SFR_SLV0_SINGLE_ADDRMAP_END_OFFSET	0x820
++#define ABP_SFR_SLV1_SINGLE_ADDRMAP_START_OFFSET	0x828
++#define ABP_SFR_SLV1_SINGLE_ADDRMAP_END_OFFSET	0x830
++
++#ifdef CONFIG_TINY4412
++/* Interleave: 2Bit, Interleave_bit1: 0x15, Interleave_bit0: 0x7 */
++#define APB_SFR_INTERLEAVE_CONF_VAL	0x20001507
++#define APB_SFR_ARBRITATION_CONF_VAL	0x00000001
++#endif
++
++#define INTERLEAVE_ADDR_MAP_START_ADDR	0x40000000
++#define INTERLEAVE_ADDR_MAP_END_ADDR	0xbfffffff
++#define INTERLEAVE_ADDR_MAP_EN		0x00000001
++
++#ifdef CONFIG_MIU_1BIT_INTERLEAVED
++/* Interleave_bit0: 0xC*/
++#define APB_SFR_INTERLEAVE_CONF_VAL	0x0000000c
++#endif
++#ifdef CONFIG_MIU_2BIT_INTERLEAVED
++/* Interleave: 2Bit, Interleave_bit1: 0x15, Interleave_bit0: 0xc */
++#define APB_SFR_INTERLEAVE_CONF_VAL	0x2000150c
++#endif
++#define SLAVE0_SINGLE_ADDR_MAP_START_ADDR	0x40000000
++#define SLAVE0_SINGLE_ADDR_MAP_END_ADDR		0x7fffffff
++#define SLAVE1_SINGLE_ADDR_MAP_START_ADDR	0x80000000
++#define SLAVE1_SINGLE_ADDR_MAP_END_ADDR		0xbfffffff
++/* Enable SME0 and SME1*/
++#define APB_SFR_SLV_ADDR_MAP_CONF_VAL		0x00000006
++
++#define FORCE_DLL_RESYNC	3
++#define DLL_CONTROL_ON		1
++
++#define DIRECT_CMD1	0x00020000
++#define DIRECT_CMD2	0x00030000
++#define DIRECT_CMD3	0x00010002
++#define DIRECT_CMD4	0x00000328
++
++#define CTRL_ZQ_MODE_NOTERM	(0x1 << 0)
++#define CTRL_ZQ_START		(0x1 << 1)
++#define CTRL_ZQ_DIV		(0 << 4)
++#define CTRL_ZQ_MODE_DDS	(0x4 << 8)
++#define CTRL_ZQ_MODE_TERM	(0x1 << 11)
++#define CTRL_ZQ_FORCE_IMPN	(0x5 << 14)
++#define CTRL_ZQ_FORCE_IMPP	(0x2 << 17)
++#define CTRL_DCC		(0xE38 << 20)
++#define ZQ_CONTROL_VAL		(CTRL_ZQ_MODE_NOTERM | CTRL_ZQ_START\
++				| CTRL_ZQ_DIV | CTRL_ZQ_MODE_DDS\
++				| CTRL_ZQ_MODE_TERM | CTRL_ZQ_FORCE_IMPN\
++				| CTRL_ZQ_FORCE_IMPP | CTRL_DCC)
++
++#define ASYNC			(0 << 0)
++#define CLK_RATIO		(1 << 1)
++#define DIV_PIPE		(1 << 3)
++#define AWR_ON			(1 << 4)
++#define AREF_DISABLE		(0 << 5)
++#define DRV_TYPE_DISABLE	(0 << 6)
++#define CHIP0_NOT_EMPTY		(0 << 8)
++#define CHIP1_NOT_EMPTY		(0 << 9)
++#define DQ_SWAP_DISABLE		(0 << 10)
++#define QOS_FAST_DISABLE	(0 << 11)
++#define RD_FETCH		(0x3 << 12)
++#define TIMEOUT_LEVEL0		(0xFFF << 16)
++#define CONCONTROL_VAL		(ASYNC | CLK_RATIO | DIV_PIPE | AWR_ON\
++				| AREF_DISABLE | DRV_TYPE_DISABLE\
++				| CHIP0_NOT_EMPTY | CHIP1_NOT_EMPTY\
++				| DQ_SWAP_DISABLE | QOS_FAST_DISABLE\
++				| RD_FETCH | TIMEOUT_LEVEL0)
++
++#define CLK_STOP_DISABLE	(0 << 1)
++#define DPWRDN_DISABLE		(0 << 2)
++#define DPWRDN_TYPE		(0 << 3)
++#define TP_DISABLE		(0 << 4)
++#define DSREF_DIABLE		(0 << 5)
++#define ADD_LAT_PALL		(1 << 6)
++#define MEM_TYPE_DDR3		(0x6 << 8)
++#define MEM_WIDTH_32		(0x2 << 12)
++#define NUM_CHIP_2		(0 << 16)
++#define BL_8			(0x3 << 20)
++#define MEMCONTROL_VAL		(CLK_STOP_DISABLE | DPWRDN_DISABLE\
++				| DPWRDN_TYPE | TP_DISABLE | DSREF_DIABLE\
++				| ADD_LAT_PALL | MEM_TYPE_DDR3 | MEM_WIDTH_32\
++				| NUM_CHIP_2 | BL_8)
++
++
++#define CHIP_BANK_8		(0x3 << 0)
++#define CHIP_ROW_15		(0x3 << 4)
++#define CHIP_COL_10		(0x3 << 8)
++#define CHIP_MAP_INTERLEAVED	(1 << 12)
++#define CHIP_MASK		(0xC0 << 16)
++#ifdef CONFIG_MIU_LINEAR
++#define CHIP0_BASE		(0x40 << 24)
++#define CHIP1_BASE		(0x60 << 24)
++#else
++#define CHIP0_BASE		(0x40 << 24)
++#define CHIP1_BASE		(0x80 << 24)
++#endif
++#define MEMCONFIG0_VAL		(CHIP_BANK_8 | CHIP_ROW_15 | CHIP_COL_10\
++				| CHIP_MAP_INTERLEAVED | CHIP_MASK | CHIP0_BASE)
++#define MEMCONFIG1_VAL		(CHIP_BANK_8 | CHIP_ROW_15 | CHIP_COL_10\
++				| CHIP_MAP_INTERLEAVED | CHIP_MASK | CHIP1_BASE)
++
++#define TP_CNT			(0xff << 24)
++#define PRECHCONFIG		TP_CNT
++
++#define CTRL_OFF		(0 << 0)
++#define CTRL_DLL_OFF		(0 << 1)
++#define CTRL_HALF		(0 << 2)
++#define CTRL_DFDQS		(1 << 3)
++#define DQS_DELAY		(0 << 4)
++#define CTRL_START_POINT	(0x10 << 8)
++#define CTRL_INC		(0x10 << 16)
++#define CTRL_FORCE		(0x71 << 24)
++#define CONTROL0_VAL		(CTRL_OFF | CTRL_DLL_OFF | CTRL_HALF\
++				| CTRL_DFDQS | DQS_DELAY | CTRL_START_POINT\
++				| CTRL_INC | CTRL_FORCE)
++
++#define CTRL_SHIFTC		(0x6 << 0)
++#define CTRL_REF		(8 << 4)
++#define CTRL_SHGATE		(1 << 29)
++#define TERM_READ_EN		(1 << 30)
++#define TERM_WRITE_EN		(1 << 31)
++#define CONTROL1_VAL		(CTRL_SHIFTC | CTRL_REF | CTRL_SHGATE\
++				| TERM_READ_EN | TERM_WRITE_EN)
++
++#define CONTROL2_VAL		0x00000000
++
++#ifdef CONFIG_TINY4412
++	#define TIMINGREF_VAL		0x000000BB
++	#define TIMINGROW_VAL		0x6946654F
++	#define	TIMINGDATA_VAL		0x46460506
++	#define	TIMINGPOWER_VAL		0x5200183C
++#else
++#define TIMINGREF_VAL		0x000000BC
++#ifdef DRAM_CLK_330
++#define TIMINGROW_VAL		0x3545548d
++#define	TIMINGDATA_VAL		0x45430506
++#define	TIMINGPOWER_VAL		0x4439033c
++#endif
++#ifdef DRAM_CLK_400
++#define TIMINGROW_VAL		0x45430506
++#define	TIMINGDATA_VAL		0x56500506
++#define	TIMINGPOWER_VAL		0x5444033d
++#endif
++#endif
++#endif
++
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/exynos4_setup.h u-boot-2017.03_nice/arch/arm/mach-exynos/exynos4_setup.h
+--- u-boot-2017.03/arch/arm/mach-exynos/exynos4_setup.h	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/exynos4_setup.h	2019-05-12 18:00:12.254062002 +0800
+@@ -6,8 +6,8 @@
+  * SPDX-License-Identifier:	GPL-2.0+
+  */
+ 
+-#ifndef _ORIGEN_SETUP_H
+-#define _ORIGEN_SETUP_H
++#ifndef _TINY4412_SETUP_H
++#define _TINY4412_SETUP_H
+ 
+ #include <config.h>
+ #include <asm/arch/cpu.h>
+@@ -434,7 +434,7 @@
+ #define ABP_SFR_SLV1_SINGLE_ADDRMAP_START_OFFSET	0x828
+ #define ABP_SFR_SLV1_SINGLE_ADDRMAP_END_OFFSET	0x830
+ 
+-#ifdef CONFIG_ORIGEN
++#ifdef CONFIG_TINY4412
+ /* Interleave: 2Bit, Interleave_bit1: 0x15, Interleave_bit0: 0x7 */
+ #define APB_SFR_INTERLEAVE_CONF_VAL	0x20001507
+ #define APB_SFR_ARBRITATION_CONF_VAL	0x00000001
+@@ -556,7 +556,7 @@
+ 
+ #define CONTROL2_VAL		0x00000000
+ 
+-#ifdef CONFIG_ORIGEN
++#ifdef CONFIG_TINY4412
+ #define TIMINGREF_VAL		0x000000BB
+ #define TIMINGROW_VAL		0x4046654f
+ #define	TIMINGDATA_VAL		0x46400506
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/Kconfig u-boot-2017.03_nice/arch/arm/mach-exynos/Kconfig
+--- u-boot-2017.03/arch/arm/mach-exynos/Kconfig	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/Kconfig	2019-05-12 17:44:19.878586226 +0800
+@@ -59,6 +59,11 @@
+ config TARGET_ODROID
+ 	bool "Exynos4412 Odroid board"
+ 
++config TARGET_TINY4412
++	bool "Exynos4412 Tiny4412 board"
++	select SUPPORT_SPL
++
++
+ endchoice
+ endif
+ 
+@@ -155,5 +160,6 @@
+ source "board/samsung/smdk5250/Kconfig"
+ source "board/samsung/smdk5420/Kconfig"
+ source "board/samsung/espresso7420/Kconfig"
++source "board/samsung/tiny4412/Kconfig"
+ 
+ endif
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/lowlevel_init.c u-boot-2017.03_nice/arch/arm/mach-exynos/lowlevel_init.c
+--- u-boot-2017.03/arch/arm/mach-exynos/lowlevel_init.c	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/lowlevel_init.c	2019-05-24 20:33:58.232695084 +0800
+@@ -218,12 +218,16 @@
+ #ifdef CONFIG_DEBUG_UART
+ #if (defined(CONFIG_SPL_BUILD) && defined(CONFIG_SPL_SERIAL_SUPPORT)) || \
+     !defined(CONFIG_SPL_BUILD)
++#ifdef CONFIG_TINY4412
++		exynos_pinmux_config(PERIPH_ID_UART0, PINMUX_FLAG_NONE);
++#else
+ 		exynos_pinmux_config(PERIPH_ID_UART3, PINMUX_FLAG_NONE);
++#endif
+ 		debug_uart_init();
+ #endif
+ #endif
+ 		mem_ctrl_init(actions & DO_MEM_RESET);
+-		tzpc_init();
++		//tzpc_init();
+ 	}
+ 
+ 	return actions & DO_WAKEUP;
+diff -urNwB u-boot-2017.03/arch/arm/mach-exynos/Makefile u-boot-2017.03_nice/arch/arm/mach-exynos/Makefile
+--- u-boot-2017.03/arch/arm/mach-exynos/Makefile	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/arch/arm/mach-exynos/Makefile	2019-05-12 17:53:48.493998403 +0800
+@@ -15,6 +15,7 @@
+ obj-$(CONFIG_EXYNOS5)	+= clock_init_exynos5.o
+ obj-$(CONFIG_EXYNOS5)	+= dmc_common.o dmc_init_ddr3.o
+ obj-$(CONFIG_EXYNOS4210)+= dmc_init_exynos4.o clock_init_exynos4.o
++obj-$(CONFIG_EXYNOS4412)+= dmc_init_exynos4412.o clock_init_exynos4412.o
+ obj-y	+= spl_boot.o tzpc.o
+ obj-y	+= lowlevel_init.o
+ endif
+diff -urNwB u-boot-2017.03/board/samsung/tiny4412/Kconfig u-boot-2017.03_nice/board/samsung/tiny4412/Kconfig
+--- u-boot-2017.03/board/samsung/tiny4412/Kconfig	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/board/samsung/tiny4412/Kconfig	2019-05-12 17:42:26.182487369 +0800
+@@ -0,0 +1,12 @@
++if TARGET_TINY4412
++
++config SYS_BOARD
++	default "tiny4412"
++
++config SYS_VENDOR
++	default "samsung"
++
++config SYS_CONFIG_NAME
++	default "tiny4412"
++
++endif
+diff -urNwB u-boot-2017.03/board/samsung/tiny4412/MAINTAINERS u-boot-2017.03_nice/board/samsung/tiny4412/MAINTAINERS
+--- u-boot-2017.03/board/samsung/tiny4412/MAINTAINERS	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/board/samsung/tiny4412/MAINTAINERS	2019-05-12 17:42:52.638549033 +0800
+@@ -0,0 +1,6 @@
++TINY4412 BOARD
++M:	Chander Kashyap <k.chander@samsung.com>
++S:	Maintained
++F:	board/samsung/tiny4412/
++F:	include/configs/tiny4412.h
++F:	configs/tiny4412_defconfig
+diff -urNwB u-boot-2017.03/board/samsung/tiny4412/Makefile u-boot-2017.03_nice/board/samsung/tiny4412/Makefile
+--- u-boot-2017.03/board/samsung/tiny4412/Makefile	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/board/samsung/tiny4412/Makefile	2019-05-12 17:42:01.190381304 +0800
+@@ -0,0 +1,22 @@
++#
++# Copyright (C) 2011 Samsung Electronics
++#
++# SPDX-License-Identifier:	GPL-2.0+
++#
++
++ifdef CONFIG_SPL_BUILD
++# necessary to create built-in.o
++obj- := __dummy__.o
++
++hostprogs-y := tools/mktiny4412spl
++always := $(hostprogs-y)
++
++# omit -O2 option to suppress
++#   warning: dereferencing type-punned pointer will break strict-aliasing rules
++#
++# TODO:
++# Fix the root cause in tools/mktiny4412spl.c and delete the following work-around
++$(obj)/tools/mktiny4412spl: HOSTCFLAGS:=$(filter-out -O2,$(HOSTCFLAGS))
++else
++obj-y	+= tiny4412.o
++endif
+diff -urNwB u-boot-2017.03/board/samsung/tiny4412/tiny4412.c u-boot-2017.03_nice/board/samsung/tiny4412/tiny4412.c
+--- u-boot-2017.03/board/samsung/tiny4412/tiny4412.c	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/board/samsung/tiny4412/tiny4412.c	2019-05-26 19:56:31.033984358 +0800
+@@ -0,0 +1,48 @@
++/*
++ * Copyright (C) 2011 Samsung Electronics
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <asm/io.h>
++#include <asm/gpio.h>
++#include <asm/arch/cpu.h>
++#include <asm/arch/mmc.h>
++#include <asm/arch/periph.h>
++#include <asm/arch/pinmux.h>
++#include <usb.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++u32 get_board_rev(void)
++{
++	return 0;
++}
++
++static void board_gpio_init(void)
++{
++	gpio_request(EXYNOS4X12_GPIO_M24, "USB4604 Reset");
++}
++
++int exynos_init(void)
++{
++	board_gpio_init();
++
++	return 0;
++}
++
++int board_usb_init(int index, enum usb_init_type init)
++{
++	gpio_direction_output(EXYNOS4X12_GPIO_M24, 0);
++	gpio_direction_output(EXYNOS4X12_GPIO_M24, 1);
++
++	return 0;
++}
++
++#ifdef CONFIG_BOARD_EARLY_INIT_F
++int exynos_early_init_f(void)
++{
++	return 0;
++}
++#endif
+diff -urNwB u-boot-2017.03/board/samsung/tiny4412/tools/mktiny4412spl.c u-boot-2017.03_nice/board/samsung/tiny4412/tools/mktiny4412spl.c
+--- u-boot-2017.03/board/samsung/tiny4412/tools/mktiny4412spl.c	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/board/samsung/tiny4412/tools/mktiny4412spl.c	2019-05-12 18:12:15.661978398 +0800
+@@ -0,0 +1,102 @@
++/*
++ * Copyright (C) 2011 Samsung Electronics
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++#include <fcntl.h>
++#include <errno.h>
++#include <string.h>
++#include <sys/stat.h>
++
++#define BUFSIZE			(16*1024)
++#define IMG_SIZE		(14*1024 - 4)
++#define FILE_PERM		(S_IRUSR | S_IWUSR | S_IRGRP \
++				| S_IWGRP | S_IROTH | S_IWOTH)
++/*
++* Requirement:
++* IROM code reads first 14K bytes from boot device.
++* It then calculates the checksum of 14K-4 bytes and compare with data at
++* 14K-4 offset.
++*
++* This function takes two filenames:
++* IN  "u-boot-spl.bin" and
++* OUT "$(BOARD)-spl.bin as filenames.
++* It reads the "u-boot-spl.bin" in 16K buffer.
++* It calculates checksum of 14K-4 Bytes and stores at 14K-4 offset in buffer.
++* It writes the buffer to "$(BOARD)-spl.bin" file.
++*/
++
++int main(int argc, char **argv)
++{
++	int i, len;
++	unsigned char buffer[BUFSIZE] = {0};
++	int ifd, ofd;
++	unsigned int checksum = 0, count;
++
++	if (argc != 3) {
++		printf(" %d Wrong number of arguments\n", argc);
++		exit(EXIT_FAILURE);
++	}
++
++	ifd = open(argv[1], O_RDONLY);
++	if (ifd < 0) {
++		fprintf(stderr, "%s: Can't open %s: %s\n",
++			argv[0], argv[1], strerror(errno));
++		exit(EXIT_FAILURE);
++	}
++
++	ofd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, FILE_PERM);
++	if (ofd < 0) {
++		fprintf(stderr, "%s: Can't open %s: %s\n",
++			argv[0], argv[2], strerror(errno));
++		if (ifd)
++			close(ifd);
++		exit(EXIT_FAILURE);
++	}
++
++	len = lseek(ifd, 0, SEEK_END);
++	lseek(ifd, 0, SEEK_SET);
++
++	count = (len < IMG_SIZE) ? len : IMG_SIZE;
++
++	if (read(ifd, buffer, count) != count) {
++		fprintf(stderr, "%s: Can't read %s: %s\n",
++			argv[0], argv[1], strerror(errno));
++
++		if (ifd)
++			close(ifd);
++		if (ofd)
++			close(ofd);
++
++		exit(EXIT_FAILURE);
++	}
++
++	for (i = 0; i < IMG_SIZE; i++)
++		checksum += buffer[i];
++
++	memcpy(&buffer[IMG_SIZE], &checksum, sizeof(checksum));
++
++
++	if (write(ofd, buffer, BUFSIZE) != BUFSIZE) {
++		fprintf(stderr, "%s: Can't write %s: %s\n",
++			argv[0], argv[2], strerror(errno));
++
++		if (ifd)
++			close(ifd);
++		if (ofd)
++			close(ofd);
++
++		exit(EXIT_FAILURE);
++	}
++
++	if (ifd)
++		close(ifd);
++	if (ofd)
++		close(ofd);
++
++	return EXIT_SUCCESS;
++}
+diff -urNwB u-boot-2017.03/common/usb_hub.c u-boot-2017.03_nice/common/usb_hub.c
+--- u-boot-2017.03/common/usb_hub.c	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/common/usb_hub.c	2019-05-26 19:58:36.633420264 +0800
+@@ -37,6 +37,8 @@
+ #endif
+ #include <asm/unaligned.h>
+ 
++#include <asm/gpio.h>
++
+ DECLARE_GLOBAL_DATA_PTR;
+ 
+ #include <usb.h>
+@@ -163,6 +165,8 @@
+ 
+ 	/* Zero out global hub_dev in case its re-used again */
+ 	memset(hub_dev, 0, sizeof(hub_dev));
++	gpio_direction_output(EXYNOS4X12_GPIO_M24, 0);
++	gpio_direction_output(EXYNOS4X12_GPIO_M24, 1);
+ }
+ 
+ static struct usb_hub_device *usb_hub_allocate(void)
+diff -urNwB u-boot-2017.03/configs/tiny4412_defconfig u-boot-2017.03_nice/configs/tiny4412_defconfig
+--- u-boot-2017.03/configs/tiny4412_defconfig	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/configs/tiny4412_defconfig	2019-05-12 17:44:59.558530885 +0800
+@@ -0,0 +1,46 @@
++CONFIG_ARM=y
++CONFIG_ARCH_EXYNOS=y
++CONFIG_ARCH_EXYNOS4=y
++CONFIG_TARGET_TINY4412=y
++CONFIG_IDENT_STRING=" for tiny4412"
++CONFIG_DEFAULT_DEVICE_TREE="exynos4412-tiny4412"
++CONFIG_SYS_CONSOLE_IS_IN_ENV=y
++CONFIG_SYS_CONSOLE_INFO_QUIET=y
++CONFIG_SPL=y
++CONFIG_HUSH_PARSER=y
++CONFIG_SYS_PROMPT="tiny4412 # "
++CONFIG_CMD_BOOTZ=y
++# CONFIG_CMD_IMLS is not set
++# CONFIG_CMD_XIMG is not set
++CONFIG_CMD_GPT=y
++CONFIG_CMD_MMC=y
++CONFIG_CMD_PART=y
++CONFIG_CMD_DFU=y
++CONFIG_CMD_USB_MASS_STORAGE=y
++# CONFIG_CMD_FPGA is not set
++# CONFIG_CMD_NET is not set
++CONFIG_CMD_DHCP=y
++# CONFIG_CMD_NFS is not set
++CONFIG_CMD_MII=y
++CONFIG_CMD_CACHE=y
++# CONFIG_CMD_MISC is not set
++CONFIG_CMD_EXT2=y
++CONFIG_CMD_EXT4=y
++CONFIG_CMD_EXT4_WRITE=y
++CONFIG_CMD_FAT=y
++CONFIG_CMD_FS_GENERIC=y
++CONFIG_ISO_PARTITION=y
++CONFIG_OF_CONTROL=y
++CONFIG_DFU_MMC=y
++CONFIG_MMC_DW=y
++CONFIG_MMC_SDHCI=y
++CONFIG_MMC_SDHCI_SDMA=y
++CONFIG_MMC_SDHCI_S5P=y
++CONFIG_USB=y
++CONFIG_DM_USB=y
++CONFIG_USB_GADGET=y
++CONFIG_USB_GADGET_DWC2_OTG=y
++CONFIG_USB_GADGET_DOWNLOAD=y
++CONFIG_G_DNL_MANUFACTURER="Samsung"
++CONFIG_G_DNL_VENDOR_NUM=0x04e8
++CONFIG_G_DNL_PRODUCT_NUM=0x6601
+diff -urNwB u-boot-2017.03/drivers/usb/eth/dm9601.c u-boot-2017.03_nice/drivers/usb/eth/dm9601.c
+--- u-boot-2017.03/drivers/usb/eth/dm9601.c	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/drivers/usb/eth/dm9601.c	2019-05-26 20:00:19.517848128 +0800
+@@ -0,0 +1,835 @@
++/*
++ * Davicom DM96xx USB 10/100Mbps ethernet devices
++ *
++ * Peter Korsgaard <jacmet@sunsite.dk>
++ *
++ * This file is licensed under the terms of the GNU General Public License
++ * version 2.  This program is licensed "as is" without any warranty of any
++ * kind, whether express or implied.
++ */
++
++/* #define DEBUG */
++
++#include <common.h>
++#include <usb.h>
++#include <linux/mii.h>
++#include "usb_ether.h"
++#include <malloc.h>
++#include <errno.h>
++
++#include <asm/unaligned.h>
++#include <memalign.h>
++#include <dm.h>
++#include <miiphy.h>
++
++#include <command.h>
++#include <net.h>
++#include <asm/io.h>
++
++
++/* datasheet:
++ http://ptm2.cc.utu.fi/ftp/network/cards/DM9601/From_NET/DM9601-DS-P01-930914.pdf
++*/
++
++#define DM9601_BASE_NAME "DM9621A"
++
++struct dm_dongle {
++   unsigned short vendor;
++   unsigned short product;
++   int flags;
++};
++
++static const struct dm_dongle products[] = {
++   {0x07aa, 0x9601, 0, }, /* Corega FEther USB-TXC */
++   {0x0a46, 0x9601, 0, }, /* Davicom USB-100 */
++   {0x0a46, 0x6688, 0, }, /* ZT6688 USB NIC */
++   {0x0a46, 0x0268, 0, }, /* ShanTou ST268 USB NIC */
++   {0x0a46, 0x8515, 0, }, /* ADMtek ADM8515 USB NIC */
++   {0x0a47, 0x9601, 0, }, /* Hirose USB-100 */
++   {0x0fe6, 0x8101, 0, }, /* DM9601 USB to Fast Ethernet Adapter */
++   {0x0fe6, 0x9700, 0, }, /* DM9601 USB to Fast Ethernet Adapter */
++   {0x0a46, 0x9000, 0, }, /* DM9000E */
++   {0x0a46, 0x9620, 0, }, /* DM9620 USB to Fast Ethernet Adapter */
++   {0x0a46, 0x9621, 0, }, /* DM9621A USB to Fast Ethernet Adapter */
++   {0x0a46, 0x9622, 0, }, /* DM9622 USB to Fast Ethernet Adapter */
++   {0x0a46, 0x0269, 0, }, /* DM962OA USB to Fast Ethernet Adapter */
++   {0x0a46, 0x1269, 0, }, /* DM9621A USB to Fast Ethernet Adapter */
++   {},         /* END */
++};
++
++
++/* control requests */
++#define DM_READ_REGS   0x00
++#define DM_WRITE_REGS  0x01
++#define DM_READ_MEMS   0x02
++#define DM_WRITE_REG   0x03
++#define DM_WRITE_MEMS  0x05
++#define DM_WRITE_MEM   0x07
++
++/* registers */
++#define DM_NET_CTRL    0x00
++#define DM_RX_CTRL 0x05
++#define DM_SHARED_CTRL 0x0b
++#define DM_SHARED_ADDR 0x0c
++#define DM_SHARED_DATA 0x0d    /* low + high */
++#define DM_PHY_ADDR    0x10    /* 6 bytes */
++#define DM_MCAST_ADDR  0x16    /* 8 bytes */
++#define DM_GPR_CTRL    0x1e
++#define DM_GPR_DATA    0x1f
++#define DM_CHIP_ID 0x2c
++#define DM_MODE_CTRL   0x91    /* only on dm9620 */
++
++/* DM_RX_CTRL */
++#define DM_RX_DIS_LONG (1 << 5)
++#define DM_RX_DIS_CRC  (1 << 4)
++#define DM_RX_ALL  (1 << 3)
++#define DM_RX_PRMSC    (1 << 1)
++#define DM_RX_RXEN (1 << 0)
++
++/* chip id values */
++#define ID_DM9601  0
++#define ID_DM9620  1
++
++#define DM_MAX_MCAST   64
++#define DM_MCAST_SIZE  8
++#define DM_EEPROM_LEN  256
++#define DM_TX_OVERHEAD 2   /* 2 byte header */
++#define DM_RX_OVERHEAD 7   /* 3 byte header + 4 byte crc tail */
++#define DM_TIMEOUT 1000
++
++#define USB_CTRL_SET_TIMEOUT 5000
++#define USB_CTRL_GET_TIMEOUT 5000
++#define USB_BULK_SEND_TIMEOUT 5000
++#define USB_BULK_RECV_TIMEOUT 5000
++
++#define AX_RX_URB_SIZE 2048
++#define PHY_CONNECT_TIMEOUT 5000
++
++static int dm_read(struct ueth_data *dev, u8 reg, u16 length, void *data)
++{
++   int len;
++   debug("%s() reg=%d, length=%d\n", __func__, reg, length);
++   len = usb_control_msg(
++       dev->pusb_dev,
++       usb_rcvctrlpipe(dev->pusb_dev, 0),
++       DM_READ_REGS,
++       USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
++       0,
++       reg,
++       data,
++       length,
++       USB_CTRL_SET_TIMEOUT);
++
++   return len == length ? 0 : -EINVAL;
++}
++
++static int dm_read_reg(struct ueth_data *dev, u8 reg, u8 *value)
++{
++   int res;
++   ALLOC_CACHE_ALIGN_BUFFER(u8, v, 2);
++
++   res = dm_read(dev, reg, 1, v);
++   *value = v[0];
++   return res;
++}
++
++static int dm_write(struct ueth_data *dev, u8 reg, u16 length, void *data)
++{
++   int len;
++   debug("%s() reg=%d, length=%d data=%pM\n", __func__, reg, length, data);
++   len = usb_control_msg(
++       dev->pusb_dev,
++       usb_sndctrlpipe(dev->pusb_dev, 0),
++       DM_WRITE_REGS,
++       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
++       0,
++       reg,
++       data,
++       length,
++       USB_CTRL_SET_TIMEOUT);
++   return len == length ? 0 : -EINVAL;
++}
++
++static int dm_write_reg(struct ueth_data *dev, u8 reg, u8 value)
++{
++   debug("%s() reg=%d, value=0x%x\n", __func__, reg, (int)value);
++   int res = usb_control_msg(
++       dev->pusb_dev,
++       usb_sndctrlpipe(dev->pusb_dev, 0),
++       DM_WRITE_REG,
++       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
++       value,
++       reg,
++       NULL,
++       0,
++       USB_CTRL_SET_TIMEOUT);
++   return res;
++}
++
++
++static int dm_read_shared_word(struct ueth_data *dev, int phy, u8 reg, __le16 *value)
++{
++   int ret, i;
++
++   /*mutex_lock(&dev->phy_mutex);*/
++
++   dm_write_reg(dev, DM_SHARED_ADDR, phy ? (reg | 0x40) : reg);
++   dm_write_reg(dev, DM_SHARED_CTRL, phy ? 0xc : 0x4);
++
++   for (i = 0; i < DM_TIMEOUT; i++) {
++       u8 tmp = 0;
++
++       udelay(1);
++       ret = dm_read_reg(dev, DM_SHARED_CTRL, &tmp);
++       if (ret < 0)
++           goto out;
++
++       /* ready */
++       if ((tmp & 1) == 0)
++           break;
++   }
++
++   if (i == DM_TIMEOUT) {
++       printf("%s read timed out!\n", phy ? "phy" : "eeprom");
++       ret = -EIO;
++       goto out;
++   }
++
++   dm_write_reg(dev, DM_SHARED_CTRL, 0x0);
++   ret = dm_read(dev, DM_SHARED_DATA, 2, value);
++
++   debug("read shared %d 0x%02x returned 0x%04x, %d\n",
++          phy, reg, *value, ret);
++
++ out:
++   /*mutex_unlock(&dev->phy_mutex);*/
++   return ret;
++}
++
++
++static int dm_write_shared_word(struct ueth_data *dev, int phy, u8 reg, __le16 value)
++{
++   int ret, i;
++   ALLOC_CACHE_ALIGN_BUFFER(__le16, v, 1);
++   *v = value;
++
++   /*mutex_lock(&dev->phy_mutex);*/
++
++   ret = dm_write(dev, DM_SHARED_DATA, 2, v);
++   if (ret < 0)
++       goto out;
++
++   dm_write_reg(dev, DM_SHARED_ADDR, phy ? (reg | 0x40) : reg);
++   if (!phy) dm_write_reg(dev, DM_SHARED_CTRL, 0x10);
++   dm_write_reg(dev, DM_SHARED_CTRL, phy ? 0x0a : 0x12);
++   dm_write_reg(dev, DM_SHARED_CTRL, 0x10);
++
++   for (i = 0; i < DM_TIMEOUT; i++) {
++       u8 tmp = 0;
++
++       udelay(1);
++       ret = dm_read_reg(dev, DM_SHARED_CTRL, &tmp);
++       if (ret < 0)
++           goto out;
++
++       /* ready */
++       if ((tmp & 1) == 0)
++           break;
++   }
++
++   if (i == DM_TIMEOUT) {
++       printf("%s write timed out!\n", phy ? "phy" : "eeprom");
++       ret = -EIO;
++       goto out;
++   }
++
++   dm_write_reg(dev, DM_SHARED_CTRL, 0x0);
++
++out:
++   /*mutex_unlock(&dev->phy_mutex);*/
++   return ret;
++}
++
++
++#if 0
++static int dm_read_eeprom_word(struct ueth_data *dev, u8 offset, void *value)
++{
++   return dm_read_shared_word(dev, 0, offset, value);
++}
++
++
++static int dm9601_get_eeprom_len(struct net_device *dev)
++{
++   return DM_EEPROM_LEN;
++}
++
++
++static int dm9601_get_eeprom(struct net_device *net,
++                struct ethtool_eeprom *eeprom, u8 * data)
++{
++   struct usbnet *dev = netdev_priv(net);
++   __le16 *ebuf = (__le16 *) data;
++   int i;
++
++   /* access is 16bit */
++   if ((eeprom->offset % 2) || (eeprom->len % 2))
++       return -EINVAL;
++
++   for (i = 0; i < eeprom->len / 2; i++) {
++       if (dm_read_eeprom_word(dev, eeprom->offset / 2 + i,
++                   &ebuf[i]) < 0)
++           return -EINVAL;
++   }
++   return 0;
++}
++#endif
++
++
++static int dm9601_mdio_read(struct ueth_data *dev, int phy_id, int loc)
++{
++   ALLOC_CACHE_ALIGN_BUFFER(__le16, v, 2);
++
++   dm_read_shared_word(dev, phy_id, loc, v);
++
++   debug("dm9601_mdio_read() phy_id=0x%02x, loc=0x%02x, returns=0x%04x|0x%04x\n",
++         phy_id, loc, *v, le16_to_cpu(*v));
++
++   return le16_to_cpu(*v);
++}
++
++
++static int dm9601_mdio_write(struct ueth_data *dev, int phy_id, int loc,
++                 int val)
++{
++   __le16 res = cpu_to_le16(val);
++  int mdio_val;
++
++   debug("dm9601_mdio_write() phy_id=0x%02x, loc=0x%02x, val=0x%04x|0x%04x\n",
++          phy_id, loc, res, val);
++
++   dm_write_shared_word(dev, phy_id, loc, res);
++   mdelay(1);
++   mdio_val = dm9601_mdio_read(dev, phy_id, loc);
++   return mdio_val;
++}
++
++
++#if 0
++static void dm9601_get_drvinfo(struct net_device *net,
++                  struct ethtool_drvinfo *info)
++{
++   /* Inherit standard device info */
++   usbnet_get_drvinfo(net, info);
++   info->eedump_len = DM_EEPROM_LEN;
++}
++
++static u32 dm9601_get_link(struct net_device *net)
++{
++   struct usbnet *dev = netdev_priv(net);
++
++   return mii_link_ok(&dev->mii);
++}
++
++static int dm9601_ioctl(struct net_device *net, struct ifreq *rq, int cmd)
++{
++   struct usbnet *dev = netdev_priv(net);
++
++   return generic_mii_ioctl(&dev->mii, if_mii(rq), cmd, NULL);
++}
++#endif
++
++
++static int dm9601_set_mac_address(struct eth_device *eth)
++{
++   struct ueth_data *dev = (struct ueth_data *)eth->priv;
++   ALLOC_CACHE_ALIGN_BUFFER(unsigned char, buf, ETH_ALEN);
++
++   if (!is_valid_ethaddr(eth->enetaddr)) {
++       printf("not setting invalid mac address %pM\n", eth->enetaddr);
++       return -EINVAL;
++   }
++
++   memcpy(buf, eth->enetaddr, ETH_ALEN);
++   dm_write(dev, DM_PHY_ADDR, ETH_ALEN, buf);
++
++   return 0;
++}
++
++
++static int dm9601_read_mac_address(struct eth_device *eth)
++{
++   struct ueth_data *dev = (struct ueth_data *)eth->priv;
++   ALLOC_CACHE_ALIGN_BUFFER(unsigned char, buf, ETH_ALEN);
++
++   /* read MAC */
++   if (dm_read(dev, DM_PHY_ADDR, ETH_ALEN, buf) < 0) {
++       printf("dm9601: Error reading MAC address\n");
++       return -ENODEV;
++   }
++
++   memcpy(eth->enetaddr, buf, ETH_ALEN);
++
++   return 0;
++}
++
++
++static void dm9601_set_multicast(struct ueth_data *dev, u8 mcast[DM_MCAST_SIZE])
++{
++   ALLOC_CACHE_ALIGN_BUFFER(unsigned char, hashes, DM_MCAST_SIZE);
++   u8 rx_ctl = (DM_RX_DIS_LONG | DM_RX_DIS_CRC | DM_RX_RXEN);
++
++   memcpy(hashes, mcast, DM_MCAST_SIZE);
++
++#if 0
++   if (net->flags & IFF_PROMISC) {
++       rx_ctl |= DM_RX_PRMSC;
++   } else if (net->flags & IFF_ALLMULTI ||
++          netdev_mc_count(net) > DM_MAX_MCAST) {
++       rx_ctl |= DM_RX_ALL;
++   } else if (!netdev_mc_empty(net)) {
++       struct netdev_hw_addr *ha;
++
++       netdev_for_each_mc_addr(ha, net) {
++           u32 crc = ether_crc(ETH_ALEN, ha->addr) >> 26;
++           hashes[crc >> 3] |= 1 << (crc & 0x7);
++       }
++   }
++#endif
++
++   dm_write(dev, DM_MCAST_ADDR, DM_MCAST_SIZE, hashes);
++   dm_write_reg(dev, DM_RX_CTRL, rx_ctl);
++}
++
++
++static int dm9601_link_reset(struct ueth_data *dev)
++{
++   u8 mcast0[DM_MCAST_SIZE] = { 0x0 };
++   u8 mcast1[DM_MCAST_SIZE] = { 0, 0x00, 0, 0x80, 0, 0, 0, 0 };
++   u8 mcast2[DM_MCAST_SIZE] = { 0, 0x00, 0, 0x84, 0, 0, 0, 0 };
++   u8 mcast3[DM_MCAST_SIZE] = { 0, 0x80, 0, 0x84, 0, 0, 0, 0 };
++
++   dm9601_set_multicast(dev, mcast0);
++   dm9601_set_multicast(dev, mcast1);
++   dm9601_set_multicast(dev, mcast2);
++   dm9601_set_multicast(dev, mcast3);
++
++   return 0;
++}
++
++/*
++ * mii_nway_restart - restart NWay (autonegotiation) for this interface
++ *
++ * Returns 0 on success, negative on error.
++ */
++static int mii_nway_restart(struct ueth_data *dev)
++{
++   int bmcr;
++   int r = -1;
++
++   /* if autoneg is off, it's an error */
++   bmcr = dm9601_mdio_read(dev, dev->phy_id, MII_BMCR);
++   debug("%s: bmcr: 0x%x\n", __func__, bmcr);
++   if (bmcr & BMCR_ANENABLE) {
++       bmcr |= BMCR_ANRESTART;
++       dm9601_mdio_write(dev, dev->phy_id, MII_BMCR, bmcr);
++       r = 0;
++   }
++
++   return r;
++}
++
++
++#if 0
++/*
++ * mcs7830_set_autoneg() - setup and trigger ethernet link autonegotiation
++ * @eth:   network device to run link negotiation on
++ * Return: zero upon success, negative upon error
++ *
++ * the routine advertises available media and starts autonegotiation
++ */
++static int dm_set_autoneg(struct ueth_data *dev)
++{
++   int adv, flg;
++   int rc;
++
++   debug("%s()\n", __func__);
++
++   /*
++    * algorithm taken from the Linux driver, which took it from
++    * "the original mcs7830 version 1.4 driver":
++    *
++    * enable all media, reset BMCR, enable auto neg, restart
++    * auto neg while keeping the enable auto neg flag set
++    */
++
++   adv = ADVERTISE_PAUSE_CAP | ADVERTISE_ALL | ADVERTISE_CSMA;
++   rc = dm9601_mdio_write(dev, dev->phy_id, MII_ADVERTISE, adv);
++
++   flg = 0;
++   if (!rc)
++       rc = dm9601_mdio_write(dev, dev->phy_id, MII_BMCR, flg);
++
++   flg |= BMCR_ANENABLE;
++   if (!rc)
++       rc = dm9601_mdio_write(dev, dev->phy_id, MII_BMCR, flg);
++
++   flg |= BMCR_ANRESTART;
++   if (!rc)
++       rc = dm9601_mdio_write(dev, dev->phy_id, MII_BMCR, flg);
++
++   debug("%s() rc: %d\n", __func__, rc);
++
++   return rc;
++}
++#endif
++
++
++static int dm9601_init(struct eth_device *eth, bd_t *bd)
++{
++   struct ueth_data    *dev = (struct ueth_data *)eth->priv;
++   int timeout = 0;
++   int link_detected;
++
++   debug("** %s()\n", __func__);
++
++   mii_nway_restart(dev);
++   /*dm_set_autoneg(dev);*/
++
++   dm9601_link_reset(dev);
++
++#define TIMEOUT_RESOLUTION 50  /* ms */
++   do {
++       link_detected = dm9601_mdio_read(dev, dev->phy_id, MII_BMSR) &
++           BMSR_LSTATUS;
++       if (!link_detected) {
++           if (timeout == 0)
++               printf("Waiting for Ethernet connection... ");
++           udelay(TIMEOUT_RESOLUTION * 1000);
++           timeout += TIMEOUT_RESOLUTION;
++       }
++   } while (!link_detected && timeout < PHY_CONNECT_TIMEOUT);
++   if (link_detected) {
++       if (timeout != 0)
++           printf("done.\n");
++   } else {
++       printf("unable to connect.\n");
++       goto out_err;
++   }
++#undef TIMEOUT_RESOLUTION
++
++   return 0;
++
++out_err:
++   printf("dm9601: Error: unable to init device.\n");
++   return -1;
++}
++
++
++static int dm9601_send(struct eth_device *eth, void *packet, int length)
++{
++   struct ueth_data *dev = (struct ueth_data *)eth->priv;
++   int err;
++   u16 packet_len;
++   int actual_len;
++   ALLOC_CACHE_ALIGN_BUFFER(unsigned char, msg, PKTSIZE + sizeof(packet_len));
++
++   debug("** %s(), len %d\n", __func__, length);
++
++   /* format:
++      b1: packet length low
++      b2: packet length high
++      b3..n: packet data
++   */
++
++   packet_len = length;
++   cpu_to_le16s(&packet_len);
++
++   memcpy(msg, &packet_len, sizeof(packet_len));
++   memcpy(msg + sizeof(packet_len), (void *)packet, length);
++
++   err = usb_bulk_msg(dev->pusb_dev,
++               usb_sndbulkpipe(dev->pusb_dev, dev->ep_out),
++               (void *)msg,
++               length + sizeof(packet_len),
++               &actual_len,
++               USB_BULK_SEND_TIMEOUT);
++   debug("Tx: len = %u, actual = %u, err = %d\n",
++           length + sizeof(packet_len), actual_len, err);
++
++   return err;
++}
++
++
++static int dm9601_recv(struct eth_device *eth)
++{
++   struct ueth_data *dev = (struct ueth_data *)eth->priv;
++   ALLOC_CACHE_ALIGN_BUFFER(unsigned char, recv_buf, AX_RX_URB_SIZE);
++   ALLOC_CACHE_ALIGN_BUFFER(unsigned char, pkt, PKTSIZE);
++   unsigned char *buf_ptr;
++   int err;
++   int actual_len;
++   u16 packet_len;
++   u8 status;
++
++   debug("** %s()\n", __func__);
++
++   /* format:
++      b1: rx status
++      b2: packet length (incl crc) low
++      b3: packet length (incl crc) high
++      b4..n-4: packet data
++      bn-3..bn: ethernet crc
++    */
++
++   err = usb_bulk_msg(dev->pusb_dev,
++               usb_rcvbulkpipe(dev->pusb_dev, dev->ep_in),
++               (void *)recv_buf,
++               AX_RX_URB_SIZE,
++               &actual_len,
++               USB_BULK_RECV_TIMEOUT);
++   debug("Rx: len = %u, actual = %u, err = %d\n", AX_RX_URB_SIZE,
++       actual_len, err);
++   if (err != 0) {
++       printf("Rx: failed to receive\n");
++       return -1;
++   }
++   if (actual_len > AX_RX_URB_SIZE) {
++       printf("Rx: received too many bytes %d\n", actual_len);
++       return -1;
++   }
++
++   buf_ptr = recv_buf;
++   while (actual_len > 0) {
++       /*
++        * First byte contains packet status.
++        */
++       if (actual_len < sizeof(status)) {
++           debug("Rx: incomplete packet length (status)\n");
++           return -1;
++       }
++       status = buf_ptr[0];
++       buf_ptr += sizeof(status);
++       actual_len -= sizeof(status);
++
++       if (unlikely(status & 0xbf)) {
++           printf("Rx: packet status failure: %d\n", (int)status);
++           /*
++           if (status & 0x01) dev->net->stats.rx_fifo_errors++;
++           if (status & 0x02) dev->net->stats.rx_crc_errors++;
++           if (status & 0x04) dev->net->stats.rx_frame_errors++;
++           if (status & 0x20) dev->net->stats.rx_missed_errors++;
++           if (status & 0x90) dev->net->stats.rx_length_errors++;
++           */
++           return -1;
++       }
++
++       /*
++        * 2nd and 3rd bytes contain the length of the actual data.
++        * Extract the length of the data.
++        */
++       if (actual_len < sizeof(packet_len)) {
++           debug("Rx: incomplete packet length (size)\n");
++           return -1;
++       }
++       memcpy(&packet_len, buf_ptr, sizeof(packet_len));
++       le16_to_cpus(&packet_len);
++       packet_len -= 4;
++       buf_ptr += sizeof(packet_len);
++       actual_len -= sizeof(packet_len);
++
++       if (packet_len > actual_len) {
++           printf("Rx: too large packet: %d, actual: %d\n", packet_len, actual_len);
++           return -1;
++       }
++
++       /* Notify net stack */
++       memcpy(pkt, buf_ptr, packet_len);
++       net_process_received_packet(pkt, packet_len);
++
++       /* Adjust for next iteration. Packets are padded to 16-bits */
++       /*if (packet_len & 1)
++           packet_len++;*/
++       actual_len -= (packet_len + 4);
++       buf_ptr += packet_len + 4;
++   }
++
++   return err;
++}
++
++
++static void dm9601_halt(struct eth_device *eth)
++{
++   debug("** %s()\n", __func__);
++}
++
++
++void dm9601_eth_before_probe(void)
++{
++   debug("** %s()\n", __func__);
++}
++
++
++int dm9601_eth_probe(struct usb_device *dev, unsigned int ifnum,
++       struct ueth_data* ss)
++{
++   struct usb_interface *iface;
++   struct usb_interface_descriptor *iface_desc;
++   int ep_in_found = 0, ep_out_found = 0;
++   int i;
++
++   debug("\n****************** %s *******************\n", __func__);
++
++   /* let's examine the device now */
++   iface = &dev->config.if_desc[ifnum];
++   iface_desc = &dev->config.if_desc[ifnum].desc;
++
++   for (i = 0; products[i].vendor != 0; i++) {
++       debug("\n******************dev->descriptor.idVendor = %#04x *******************\n", dev->descriptor.idVendor);
++       debug("\n******************dev->descriptor.idProduct = %#04x *******************\n", dev->descriptor.idProduct);
++       if (dev->descriptor.idVendor == products[i].vendor &&
++           dev->descriptor.idProduct == products[i].product)
++           /* Found a supported dongle */
++           break;
++   }
++
++   if (products[i].vendor == 0)
++       {
++       debug("\n****************** products[i].vendor == 0 *******************\n");
++       return 0;
++       }
++
++   memset(ss, 0, sizeof(struct ueth_data));
++
++   /* At this point, we know we've got a live one */
++   debug("\n\nUSB Ethernet device detected: %#04x:%#04x\n",
++         dev->descriptor.idVendor, dev->descriptor.idProduct);
++
++   /* Initialize the ueth_data structure with some useful info */
++   ss->ifnum = ifnum;
++   ss->pusb_dev = dev;
++   ss->subclass = iface_desc->bInterfaceSubClass;
++   ss->protocol = iface_desc->bInterfaceProtocol;
++
++   /*
++    * We are expecting a minimum of 3 endpoints - in, out (bulk), and
++    * int. We will ignore any others.
++    */
++   for (i = 0; i < iface_desc->bNumEndpoints; i++) {
++       /* is it an BULK endpoint? */
++       if ((iface->ep_desc[i].bmAttributes &
++            USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_BULK) {
++           u8 ep_addr = iface->ep_desc[i].bEndpointAddress;
++           if (ep_addr & USB_DIR_IN) {
++               if (!ep_in_found) {
++                   ss->ep_in = ep_addr &
++                       USB_ENDPOINT_NUMBER_MASK;
++                   ep_in_found = 1;
++               }
++           } else {
++               if (!ep_out_found) {
++                   ss->ep_out = ep_addr &
++                       USB_ENDPOINT_NUMBER_MASK;
++                   ep_out_found = 1;
++               }
++           }
++       }
++
++       /* is it an interrupt endpoint? */
++       if ((iface->ep_desc[i].bmAttributes &
++           USB_ENDPOINT_XFERTYPE_MASK) == USB_ENDPOINT_XFER_INT) {
++           ss->ep_int = iface->ep_desc[i].bEndpointAddress &
++               USB_ENDPOINT_NUMBER_MASK;
++           ss->irqinterval = iface->ep_desc[i].bInterval;
++       }
++   }
++   debug("Endpoints In %d Out %d Int %d\n",
++         ss->ep_in, ss->ep_out, ss->ep_int);
++
++   /* Do some basic sanity checks, and bail if we find a problem */
++   if (usb_set_interface(dev, iface_desc->bInterfaceNumber, 0) ||
++       !ss->ep_in || !ss->ep_out || !ss->ep_int) {
++       printf("Problems with device\n");
++       return 0;
++   }
++
++   return 1;
++}
++
++
++int dm9601_eth_get_info(struct usb_device *usb_dev, struct ueth_data *ss,
++               struct eth_device *eth)
++{
++   u8 id = 0xff;
++   u8 mcast0[DM_MCAST_SIZE] = { 0x0 };
++
++   debug("\n%s\n", __func__);
++
++   if (!eth) {
++       printf("%s: missing parameter.\n", __func__);
++       return 0;
++   }
++
++   sprintf(eth->name, "%s%d", DM9601_BASE_NAME, 0 /*curr_eth_dev++*/);
++   eth->init = dm9601_init;
++   eth->send = dm9601_send;
++   eth->recv = dm9601_recv;
++   eth->halt = dm9601_halt;
++#ifdef CONFIG_MCAST_TFTP
++   /*
++   eth->mcast = dm9601_mcast(struct eth_device *, const u8 *enetaddr, u8 set);
++   */
++#endif
++   eth->write_hwaddr = dm9601_set_mac_address;
++   eth->priv = ss;
++
++   /* reset */
++   dm_write_reg(ss, DM_NET_CTRL, 1);
++   udelay(20);
++
++   /* read MAC */
++   if (dm9601_read_mac_address(eth))
++       return 0;
++   debug("\nDavicom DM96xx MAC address is %pM\n", eth->enetaddr);
++
++   /*
++    * Overwrite the auto-generated address only with good ones.
++    */
++   if (!is_valid_ethaddr(eth->enetaddr)) {
++       printf("dm9601: No valid MAC address in EEPROM, using %pM\n",
++           eth->enetaddr);
++       /*__dm9601_set_mac_address(ss);*/
++   }
++
++   if (dm_read_reg(ss, DM_CHIP_ID, &id) < 0) {
++       printf("dm9601: Error reading chip ID\n");
++       return 0;
++   }
++
++   debug("Chip ID = %d\n", id);
++   /* put dm9620 devices in dm9601 mode */
++   if (id == ID_DM9620) {
++       u8 mode;
++
++       if (dm_read_reg(ss, DM_MODE_CTRL, &mode) < 0) {
++           printf("dm9601: Error reading MODE_CTRL\n");
++           return 0;
++       }
++       dm_write_reg(ss, DM_MODE_CTRL, mode & 0x7f);
++   }
++
++   /* power up phy */
++   dm_write_reg(ss, DM_GPR_CTRL, 1);
++   dm_write_reg(ss, DM_GPR_DATA, 0);
++
++   /* receive broadcast packets */
++   dm9601_set_multicast(ss, mcast0);
++
++   dm9601_mdio_read(ss, ss->phy_id, MII_BMSR);
++   dm9601_mdio_write(ss, ss->phy_id, MII_BMCR, BMCR_RESET);
++   dm9601_mdio_write(ss, ss->phy_id, MII_ADVERTISE,
++             ADVERTISE_ALL | ADVERTISE_CSMA | ADVERTISE_PAUSE_CAP);
++   mii_nway_restart(ss);
++
++   return 1;
++}
++
+diff -urNwB u-boot-2017.03/drivers/usb/eth/Makefile u-boot-2017.03_nice/drivers/usb/eth/Makefile
+--- u-boot-2017.03/drivers/usb/eth/Makefile	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/drivers/usb/eth/Makefile	2019-05-26 19:59:59.225866886 +0800
+@@ -10,3 +10,4 @@
+ obj-$(CONFIG_USB_ETHER_MCS7830) += mcs7830.o
+ obj-$(CONFIG_USB_ETHER_SMSC95XX) += smsc95xx.o
+ obj-$(CONFIG_USB_ETHER_RTL8152) += r8152.o r8152_fw.o
++obj-$(CONFIG_USB_ETHER_DM9621) += dm9601.o
+diff -urNwB u-boot-2017.03/drivers/usb/eth/usb_ether.c u-boot-2017.03_nice/drivers/usb/eth/usb_ether.c
+--- u-boot-2017.03/drivers/usb/eth/usb_ether.c	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/drivers/usb/eth/usb_ether.c	2019-05-26 20:02:11.421500922 +0800
+@@ -187,6 +187,13 @@
+ 		.get_info = r8152_eth_get_info,
+ 	},
+ #endif
++#ifdef CONFIG_USB_ETHER_DM9621
++	{
++		.before_probe = dm9601_eth_before_probe,
++		.probe = dm9601_eth_probe,
++		.get_info = dm9601_eth_get_info,
++	},
++#endif
+ 	{ },		/* END */
+ };
+ 
+diff -urNwB u-boot-2017.03/drivers/usb/host/ehci-exynos.c u-boot-2017.03_nice/drivers/usb/host/ehci-exynos.c
+--- u-boot-2017.03/drivers/usb/host/ehci-exynos.c	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/drivers/usb/host/ehci-exynos.c	2019-05-26 18:40:36.837325407 +0800
+@@ -225,6 +225,7 @@
+ 		dm_gpio_set_value(&plat->vbus_gpio, 1);
+ 
+ 	setup_usb_phy(ctx->usb);
++	mdelay(1);
+ 	hcor = (struct ehci_hcor *)((uint32_t)ctx->hcd +
+ 			HC_LENGTH(ehci_readl(&ctx->hcd->cr_capbase)));
+ 
+diff -urNwB u-boot-2017.03/drivers/usb/host/usb-uclass.c u-boot-2017.03_nice/drivers/usb/host/usb-uclass.c
+--- u-boot-2017.03/drivers/usb/host/usb-uclass.c	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/drivers/usb/host/usb-uclass.c	2019-06-02 20:07:02.790819693 +0800
+@@ -219,6 +219,29 @@
+ 	}
+ }
+ 
++#include <asm/gpio.h>
++void usb_phy_reset(void)
++{
++       struct gpio_desc gpio = {};
++       int node;
++
++       node = fdt_node_offset_by_compatible(gd->fdt_blob, 0,
++                       "smsc,usb-phy-reset");
++       if (node < 0)
++               return;
++
++       gpio_request_by_name_nodev(gd->fdt_blob, node, "reset-gpio", 0, &gpio,
++                                  GPIOD_IS_OUT);
++
++       if (dm_gpio_is_valid(&gpio)) {
++               dm_gpio_set_value(&gpio, 1);
++               mdelay(100);
++               dm_gpio_set_value(&gpio, 0);
++               dm_gpio_free(gpio.dev, &gpio);
++		mdelay(100);
++       }
++}
++
+ int usb_init(void)
+ {
+ 	int controllers_initialized = 0;
+diff -urNwB u-boot-2017.03/include/configs/tiny4412.h u-boot-2017.03_nice/include/configs/tiny4412.h
+--- u-boot-2017.03/include/configs/tiny4412.h	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/include/configs/tiny4412.h	2019-06-07 23:40:56.173675767 +0800
+@@ -0,0 +1,184 @@
++/*
++ * Copyright (C) 2011 Samsung Electronics
++ *
++ * Configuration settings for the SAMSUNG ORIGEN (EXYNOS4210) board.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#ifndef __CONFIG_ORIGEN_H
++#define __CONFIG_ORIGEN_H
++
++#include <configs/exynos4-common.h>
++
++/* High Level Configuration Options */
++#define CONFIG_EXYNOS4412		1	/* which is a EXYNOS4412 SoC */
++#define CONFIG_TINY4412			1	/* working with tiny4412*/
++
++#define CONFIG_SUPPORT_EMMC_BOOT	1
++#define CONFIG_BLK			1
++
++/* USB */
++#define CONFIG_USB_EHCI_EXYNOS         1
++
++/* USB-KEYBOARD */
++#define CONFIG_SYS_STDIO_DEREGISTER 1
++
++/* ETHERNET */
++#define CONFIG_USB_HOST_ETHER          1
++#define CONFIG_USB_ETHER_DM9621                1
++
++#define CONFIG_IPADDR           192.168.1.123
++#define CONFIG_SERVERIP         192.168.1.102
++
++#define CONFIG_SYS_DCACHE_OFF		1
++
++/* ORIGEN has 4 bank of DRAM */
++#define CONFIG_NR_DRAM_BANKS		4
++#define CONFIG_SYS_SDRAM_BASE		0x40000000
++#define PHYS_SDRAM_1			CONFIG_SYS_SDRAM_BASE
++#define SDRAM_BANK_SIZE			(256 << 20)	/* 256 MB */
++
++/* memtest works on */
++#define CONFIG_SYS_MEMTEST_START	CONFIG_SYS_SDRAM_BASE
++#define CONFIG_SYS_MEMTEST_END		(CONFIG_SYS_SDRAM_BASE + 0x6000000)
++#define CONFIG_SYS_LOAD_ADDR		(CONFIG_SYS_SDRAM_BASE + 0x3E00000)
++
++#define CONFIG_SYS_TEXT_BASE		0x43E00000
++
++#define CONFIG_MACH_TYPE		MACH_TYPE_TINY4412
++
++/* select serial console configuration */
++#define CONFIG_SERIAL0
++#define CONFIG_BAUDRATE			115200
++
++/* Console configuration */
++#define CONFIG_DEFAULT_CONSOLE		"console=ttySAC0,115200n8\0"
++
++#define CONFIG_SYS_MEM_TOP_HIDE	(1 << 20)	/* ram console */
++
++#define CONFIG_SYS_MONITOR_BASE	0x00000000
++
++/* Power Down Modes */
++#define S5P_CHECK_SLEEP			0x00000BAD
++#define S5P_CHECK_DIDLE			0xBAD00000
++#define S5P_CHECK_LPA			0xABAD0000
++
++#define CONFIG_SUPPORT_RAW_INITRD
++
++/* MMC SPL */
++#define COPY_BL2_FNPTR_ADDR	0x02020030
++#define CONFIG_SPL_TEXT_BASE	0x02023400
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++	"loadaddr=0x40007000\0" \
++	"rdaddr=0x48000000\0" \
++	"kerneladdr=0x40007000\0" \
++	"ramdiskaddr=0x48000000\0" \
++	"console=ttySAC0,115200n8\0" \
++	"mmcdev=0\0" \
++	"bootenv=uEnv.txt\0" \
++	"loadbootenv=load mmc ${mmcdev} ${loadaddr} ${bootenv}\0" \
++	"importbootenv=echo Importing environment from mmc ...; " \
++		"env import -t $loadaddr $filesize\0" \
++        "loadbootscript=load mmc ${mmcdev} ${loadaddr} boot.scr\0" \
++        "bootscript=echo Running bootscript from mmc${mmcdev} ...; " \
++                "source ${loadaddr}\0"
++#define CONFIG_BOOTCOMMAND \
++	"if mmc rescan; then " \
++		"echo SD/MMC found on device ${mmcdev};" \
++		"if run loadbootenv; then " \
++			"echo Loaded environment from ${bootenv};" \
++			"run importbootenv;" \
++		"fi;" \
++		"if test -n $uenvcmd; then " \
++			"echo Running uenvcmd ...;" \
++			"run uenvcmd;" \
++		"fi;" \
++		"if run loadbootscript; then " \
++			"run bootscript; " \
++		"fi; " \
++	"fi;" \
++	"load mmc ${mmcdev} ${loadaddr} uImage; bootm ${loadaddr} "
++
++#define CONFIG_CLK_1000_400_200
++
++/* MIU (Memory Interleaving Unit) */
++#define CONFIG_MIU_2BIT_21_7_INTERLEAVED
++
++#define CONFIG_SPL_LDSCRIPT     "board/samsung/common/exynos-uboot-spl.lds"
++#define CONFIG_SPL_MAX_FOOTPRINT        (14 * 1024)
++
++#define CONFIG_SYS_INIT_SP_ADDR         0x02040000
++
++/*
++ *    SD MMC layout:
++ *    +------------------------------------------------------------------------------------------+
++ *    |                                                                                          |
++ *    |            |            |               |              |                |                |
++ *    |   512B     |   8K(bl1)  |    16k(bl2)   |  16K(env)    |    512k(u-boot)|                |
++ *    |            |            |               |              |                |                |
++ *    |                                                                                          |
++ *    +------------------------------------------------------------------------------------------+
++ *
++ *
++ * signed_bl1_position=1
++ * bl2_position=17
++ * #env_position = 49 
++ * uboot_position=81
++ * tzsw_position=2097
++ *
++ */
++
++
++/*   @new one
++ *    SD MMC layout:
++ *    +------------------------------------------------------------------------------------------+
++ *    |                                                                                          |
++ *    |            |            |               |              |                |                |
++ *    |   512B     |   8K(bl1)  |    16k(bl2)   |  512K(u-boot)|    92k(TZSW)   | 16K(ENV)       |
++ *    |            |            |               |              |                |                |
++ *    |                                                                                          |
++ *    +------------------------------------------------------------------------------------------+
++ *
++ * signed_bl1_position=1
++ * bl2_position=17
++ * uboot_position=49
++ * tzsw_position=1073
++ * #env_position = 1257
++ *
++ */
++
++
++#if 0
++#define CONFIG_SYS_MMC_ENV_DEV  (2)                     /* mmc2 in dts */
++#define RESERVE_BLOCK_SIZE              (512)
++#else
++#define CONFIG_SYS_MMC_ENV_DEV  (4)                     /* mmc4 */
++#define RESERVE_BLOCK_SIZE              (0)
++#endif
++
++#define CONFIG_ENV_IS_IN_MMC
++#define CONFIG_ENV_SIZE			(16 << 10)	/* 16 KB */
++#define BL1_SIZE			(8 << 10)       /* 8 K reserved for BL1*/
++#define BL2_SIZE			(16 << 10)      /* 16K for BL2 */
++#define TZSW_SIZE			(92 << 10)      /* 92K for TZSW */
++
++#if 0
++#define CONFIG_ENV_OFFSET		(RESERVE_BLOCK_SIZE + BL1_SIZE + BL2_SIZE )
++
++/* U-Boot copy size from boot Media to DRAM.*/
++#define COPY_BL2_SIZE		0x80000
++#define BL2_START_OFFSET	((CONFIG_ENV_OFFSET + CONFIG_ENV_SIZE)/512)
++#define BL2_SIZE_BLOC_COUNT	(COPY_BL2_SIZE/512)
++
++#else      // new partition
++#define CONFIG_ENV_OFFSET               (RESERVE_BLOCK_SIZE + BL1_SIZE + BL2_SIZE + COPY_BL2_SIZE + TZSW_SIZE )
++
++/* U-Boot copy size from boot Media to DRAM.*/
++#define COPY_BL2_SIZE           0x80000     /* 512K */
++#define BL2_START_OFFSET        ((RESERVE_BLOCK_SIZE + BL1_SIZE + BL2_SIZE)/512)
++#define BL2_SIZE_BLOC_COUNT     (COPY_BL2_SIZE/512)
++#endif
++
++#endif	/* __CONFIG_H */
+diff -urNwB u-boot-2017.03/include/usb_ether.h u-boot-2017.03_nice/include/usb_ether.h
+--- u-boot-2017.03/include/usb_ether.h	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/include/usb_ether.h	2019-05-26 20:05:35.349498393 +0800
+@@ -137,6 +137,12 @@
+ 		    struct ueth_data *ss);
+ int r8152_eth_get_info(struct usb_device *dev, struct ueth_data *ss,
+ 		       struct eth_device *eth);
++
++void dm9601_eth_before_probe(void);
++int dm9601_eth_probe(struct usb_device *dev, unsigned int ifnum,
++                       struct ueth_data *ss);
++int dm9601_eth_get_info(struct usb_device *dev, struct ueth_data *ss,
++                       struct eth_device *eth);
+ #endif
+ 
+ #endif /* __USB_ETHER_H__ */
+diff -urNwB u-boot-2017.03/Makefile u-boot-2017.03_nice/Makefile
+--- u-boot-2017.03/Makefile	2017-03-14 01:54:16.000000000 +0800
++++ u-boot-2017.03_nice/Makefile	2019-05-12 18:01:53.174138582 +0800
+@@ -246,6 +246,9 @@
+ CROSS_COMPILE ?=
+ endif
+ 
++ARCH		?= arm
++CROSS_COMPILE ?= /home/flinn/tools/4.5.1/bin/arm-none-linux-gnueabi-
++
+ KCONFIG_CONFIG	?= .config
+ export KCONFIG_CONFIG
+ 
+@@ -837,8 +840,9 @@
+ cfg: u-boot.cfg
+ 
+ quiet_cmd_cfgcheck = CFGCHK  $2
+-cmd_cfgcheck = $(srctree)/scripts/check-config.sh $2 \
+-		$(srctree)/scripts/config_whitelist.txt $(srctree)
++cmd_cfgcheck = 
++#cmd_cfgcheck = $(srctree)/scripts/check-config.sh $2 \
++#		$(srctree)/scripts/config_whitelist.txt $(srctree)
+ 
+ all:		$(ALL-y)
+ ifeq ($(CONFIG_DM_I2C_COMPAT)$(CONFIG_SANDBOX),y)
+diff -urNwB u-boot-2017.03/run.sh u-boot-2017.03_nice/run.sh
+--- u-boot-2017.03/run.sh	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/run.sh	2019-05-26 18:52:08.701367437 +0800
+@@ -0,0 +1,7 @@
++echo -e "\033[45m start fusing \033[0m"
++
++cd sd_fuse/tiny4412/
++./sd_fusing.sh /dev/sdc
++cd ../..
++
++echo -e "\033[45m fusing over \033[0m"
+diff -urNwB u-boot-2017.03/sd_fuse.sh u-boot-2017.03_nice/sd_fuse.sh
+--- u-boot-2017.03/sd_fuse.sh	1970-01-01 08:00:00.000000000 +0800
++++ u-boot-2017.03_nice/sd_fuse.sh	2019-06-05 21:22:42.927009331 +0800
+@@ -0,0 +1,5 @@
++#!/bin/bash
++
++cd sd_fuse/tiny4412/
++sudo ./sd_fusing.sh /dev/sdc
++cd -

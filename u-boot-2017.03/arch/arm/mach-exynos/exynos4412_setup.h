@@ -6,8 +6,8 @@
  * SPDX-License-Identifier:	GPL-2.0+
  */
 
-#ifndef _TINY4412_SETUP_H
-#define _TINY4412_SETUP_H
+#ifndef _EXYNOS4412_SETUP_H
+#define _EXYNOS4412_SETUP_H
 
 #include <config.h>
 #include <asm/arch/cpu.h>
@@ -470,10 +470,10 @@ struct mem_timings {
 #define CTRL_ZQ_MODE_NOTERM	(0x1 << 0)
 #define CTRL_ZQ_START		(0x1 << 1)
 #define CTRL_ZQ_DIV		(0 << 4)
-#define CTRL_ZQ_MODE_DDS	(0x7 << 8)
-#define CTRL_ZQ_MODE_TERM	(0x2 << 11)
+#define CTRL_ZQ_MODE_DDS	(0x4 << 8)
+#define CTRL_ZQ_MODE_TERM	(0x1 << 11)
 #define CTRL_ZQ_FORCE_IMPN	(0x5 << 14)
-#define CTRL_ZQ_FORCE_IMPP	(0x6 << 17)
+#define CTRL_ZQ_FORCE_IMPP	(0x2 << 17)
 #define CTRL_DCC		(0xE38 << 20)
 #define ZQ_CONTROL_VAL		(CTRL_ZQ_MODE_NOTERM | CTRL_ZQ_START\
 				| CTRL_ZQ_DIV | CTRL_ZQ_MODE_DDS\
@@ -506,7 +506,7 @@ struct mem_timings {
 #define ADD_LAT_PALL		(1 << 6)
 #define MEM_TYPE_DDR3		(0x6 << 8)
 #define MEM_WIDTH_32		(0x2 << 12)
-#define NUM_CHIP_2		(1 << 16)
+#define NUM_CHIP_2		(0 << 16)
 #define BL_8			(0x3 << 20)
 #define MEMCONTROL_VAL		(CLK_STOP_DISABLE | DPWRDN_DISABLE\
 				| DPWRDN_TYPE | TP_DISABLE | DSREF_DIABLE\
@@ -515,20 +515,20 @@ struct mem_timings {
 
 
 #define CHIP_BANK_8		(0x3 << 0)
-#define CHIP_ROW_14		(0x2 << 4)
+#define CHIP_ROW_15		(0x3 << 4)
 #define CHIP_COL_10		(0x3 << 8)
 #define CHIP_MAP_INTERLEAVED	(1 << 12)
-#define CHIP_MASK		(0xe0 << 16)
+#define CHIP_MASK		(0xC0 << 16)
 #ifdef CONFIG_MIU_LINEAR
 #define CHIP0_BASE		(0x40 << 24)
 #define CHIP1_BASE		(0x60 << 24)
 #else
-#define CHIP0_BASE		(0x20 << 24)
-#define CHIP1_BASE		(0x40 << 24)
+#define CHIP0_BASE		(0x40 << 24)
+#define CHIP1_BASE		(0x80 << 24)
 #endif
-#define MEMCONFIG0_VAL		(CHIP_BANK_8 | CHIP_ROW_14 | CHIP_COL_10\
+#define MEMCONFIG0_VAL		(CHIP_BANK_8 | CHIP_ROW_15 | CHIP_COL_10\
 				| CHIP_MAP_INTERLEAVED | CHIP_MASK | CHIP0_BASE)
-#define MEMCONFIG1_VAL		(CHIP_BANK_8 | CHIP_ROW_14 | CHIP_COL_10\
+#define MEMCONFIG1_VAL		(CHIP_BANK_8 | CHIP_ROW_15 | CHIP_COL_10\
 				| CHIP_MAP_INTERLEAVED | CHIP_MASK | CHIP1_BASE)
 
 #define TP_CNT			(0xff << 24)
@@ -557,10 +557,10 @@ struct mem_timings {
 #define CONTROL2_VAL		0x00000000
 
 #ifdef CONFIG_TINY4412
-#define TIMINGREF_VAL		0x000000BB
-#define TIMINGROW_VAL		0x4046654f
-#define	TIMINGDATA_VAL		0x46400506
-#define	TIMINGPOWER_VAL		0x52000A3C
+	#define TIMINGREF_VAL		0x000000BB
+	#define TIMINGROW_VAL		0x6946654F
+	#define	TIMINGDATA_VAL		0x46460506
+	#define	TIMINGPOWER_VAL		0x5200183C
 #else
 #define TIMINGREF_VAL		0x000000BC
 #ifdef DRAM_CLK_330
@@ -575,3 +575,4 @@ struct mem_timings {
 #endif
 #endif
 #endif
+
