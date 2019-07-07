@@ -1,6 +1,2 @@
-# /etc/inittab
 console::askfirst:-/bin/sh
 ::sysinit:/etc/init.d/rcS
-::ctrlaltdel:/sbin/reboot
-::shutdown:/bin/umount -a -r
-::restart:/sbin/init

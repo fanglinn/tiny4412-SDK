@@ -1,6 +1,6 @@
 #!/bin/bash
 
-target=../tiny4412_1.0.bin
+target=../tiny4412
 
 
 ./mkbl2 $target bl2.bin 14336
