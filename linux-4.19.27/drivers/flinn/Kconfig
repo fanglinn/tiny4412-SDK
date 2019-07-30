@@ -1,0 +1,15 @@
+menu "driver add by Flinn"
+	config BACKLIGHT
+	tristate "Backlight support"
+	default y
+	help
+	  This is backlight driver to tiny4412 from flinn.
+
+	config LCD
+	tristate "LCD support"
+	depends on BACKLIGHT
+	default y 
+	help
+	  This is LCD driver to tiny4412 from Flinn. 
+
+endmenu
