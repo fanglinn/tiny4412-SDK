@@ -130,7 +130,7 @@ static int gpio_demo_probe(struct platform_device *pdev)
 
     dev_set_drvdata(dev, data);
     // ????/sys/bus/platform/drivers/gpio_demo/110002e0.gpio_demo/???????gpio_demo???
-    device_create_file(dev, &dev_attr_gpio_demo);
+    //device_create_file(dev, &dev_attr_gpio_demo);
 
     config = readl(cfg_reg);
     pud = readl(pud_reg);
