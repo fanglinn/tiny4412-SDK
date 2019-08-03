@@ -290,19 +290,54 @@
 	};
 };
 
+&i2c_0 {
+	samsung,i2c-sda-delay = <100>;
+	samsung,i2c-max-bus-freq = <400000>;
+	status = "okay";
+
+/*
+	eeprom: eeprom@50 {
+		compatible = "atmel,24c16", "microchip, 24aa025e48";
+		reg = <0x50>;
+		pagesize = <16>;
+	};
+*/
+	
+	eeprom@50 {                      // the same as driverid_table->name
+		compatible = "tiny4412,eeprom";     
+		reg = <0x50>;            // slave address
+	};
+};
+
 &i2c_1 {
 	samsung,i2c-sda-delay = <100>;
 	samsung,i2c-max-bus-freq = <400000>;
 	status = "okay";
 
-	polytouch: edt-ft5x06@38 { 
-		compatible = "edt,edt-ft5406";
+/*
+	tiny4412_ts@38 {
+		compatible = "tiny4412_ts";
 		reg = <0x38>;
+		//pinctrl-names = "default";
+		//pinctrl-0 = <&i2c1_bus>; 
 		interrupt-parent = <&gpx1>;
 		interrupts = <6 IRQ_TYPE_EDGE_FALLING>; 
 		touchscreen-size-x = <1024>;
 		touchscreen-size-y = <600>;
 	}; 
+*/
+
+	it7260_ts@46 {
+		compatible = "it7260_ts";
+		reg = <0x46>;
+		//pinctrl-names = "default";
+		//pinctrl-0 = <&i2c1_bus>;
+		interrupt-parent = <&gpx1>;
+		interrupts = <6 IRQ_TYPE_EDGE_FALLING>;
+		touchscreen-size-x = <1024>;
+		touchscreen-size-y = <600>;
+	};
+
 };
 
 &rtc {

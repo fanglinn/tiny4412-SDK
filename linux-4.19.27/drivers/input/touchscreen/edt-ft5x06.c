@@ -69,6 +69,8 @@
 #define EDT_RAW_DATA_RETRIES		100
 #define EDT_RAW_DATA_DELAY		1000 /* usec */
 
+#define DEBUG 
+
 enum edt_ver {
 	EDT_M06,
 	EDT_M09,
@@ -779,6 +781,8 @@ static int edt_ft5x06_ts_identify(struct i2c_client *client,
 	int error;
 	char *model_name = tsdata->name;
 
+	pr_info("%s called .\n", __func__);
+
 	/* see what we find if we assume it is a M06 *
 	 * if we get less than EDT_NAME_LEN, we don't want
 	 * to have garbage in there
@@ -786,6 +790,9 @@ static int edt_ft5x06_ts_identify(struct i2c_client *client,
 	memset(rdbuf, 0, sizeof(rdbuf));
 	error = edt_ft5x06_ts_readwrite(client, 1, "\xBB",
 					EDT_NAME_LEN - 1, rdbuf);
+
+	pr_info("%s error : %d .\n", __func__, error);
+
 	if (error)
 		return error;
 
