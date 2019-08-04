@@ -12,4 +12,11 @@ menu "driver add by Flinn"
 	help
 	  This is LCD driver to tiny4412 from Flinn. 
 
+	config TS
+	tristate "TS support"
+	depends on BACKLIGHT
+	default y
+	help
+	  This is TS driver to tiny4412 from Flinn.
+
 endmenu
