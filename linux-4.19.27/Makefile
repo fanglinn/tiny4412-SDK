@@ -320,7 +320,7 @@ include scripts/subarch.include
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 ARCH		?= arm
-CROSS_COMPILE ?= /home/flinn/tools/6.2.1/bin/arm-none-eabi-
+CROSS_COMPILE ?= /home/flinn/tools/4.8.3/bin/arm-none-linux-gnueabi-
 
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
