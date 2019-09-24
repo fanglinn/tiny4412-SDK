@@ -10,6 +10,7 @@
 
 /dts-v1/;
 #include "exynos4412.dtsi"
+#include <dt-bindings/sound/samsung-i2s.h>
 #include <dt-bindings/gpio/gpio.h>
 
 / {
@@ -183,6 +184,71 @@
 		clock-names = "fimd0","aclk160";
 	};
 
+/*
+	sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "wm-sound";
+
+		simple-audio-card,format = "i2s";
+		simple-audio-card,bitclock-master = <&link0_codec>;
+		simple-audio-card,frame-master = <&link0_codec>;
+
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Line", "Line In",
+			"Line", "Line Out",
+			"Speaker", "Speaker",
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Headphone Jack", "HP_L",
+			"Headphone Jack", "HP_R",
+			"Speaker", "SPK_LP",
+			"Speaker", "SPK_LN",
+			"Speaker", "SPK_RP",
+			"Speaker", "SPK_RN",
+			"LINPUT1", "Mic Jack",
+			"LINPUT3", "Mic Jack",
+			"RINPUT1", "Mic Jack",
+			"RINPUT2", "Mic Jack";
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s0 0>;
+		};
+
+		link0_codec: simple-audio-card,codec {
+			sound-dai = <&codec>;
+			clocks = <&i2s0 CLK_I2S_CDCLK>;
+			system-clock-frequency = <11289600>;
+		};
+	};
+*/
+
+	sound{
+		compatible = "tiny4412,wm8960-machine";
+		samsung,i2s-controller = <&i2s0>;
+		samsung,audio-codec = <&codec>;
+		samsung,name = "wm-8960a";
+		clocks = <&clock CLK_FOUT_EPLL>;
+		clock-names = "fout_epll";
+		samsung-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Line", "Line In",
+			"Line", "Line Out",
+			"Speaker", "Speaker",
+			"Headphone", "Headphone Jack";
+		samsung-audio-card,routing =
+			"Headphone Jack", "HP_L",
+			"Headphone Jack", "HP_R",
+			"Speaker", "SPK_LP",
+			"Speaker", "SPK_LN",
+			"Speaker", "SPK_RP",
+			"Speaker", "SPK_RN",
+			"LINPUT1", "Mic Jack",
+			"LINPUT3", "Mic Jack",
+			"RINPUT1", "Mic Jack",
+			"RINPUT2", "Mic Jack";
+	};
+
 	fixed-rate-clocks {
 		xxti {
 			compatible = "samsung,clock-xxti";
@@ -290,22 +356,32 @@
 	};
 };
 
+&i2s0 {
+	pinctrl-0 = <&i2s0_bus>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+
+
 &i2c_0 {
 	samsung,i2c-sda-delay = <100>;
 	samsung,i2c-max-bus-freq = <400000>;
 	status = "okay";
 
-/*
-	eeprom: eeprom@50 {
-		compatible = "atmel,24c16", "microchip, 24aa025e48";
-		reg = <0x50>;
-		pagesize = <16>;
-	};
-*/
 	
 	eeprom@50 {                      // the same as driverid_table->name
 		compatible = "tiny4412,eeprom";     
 		reg = <0x50>;            // slave address
+	};
+
+	codec: wm8960@1a {
+		compatible = "wlf,wm8960";
+		reg = <0x1a>;
+		clocks = <&pmu_system_controller 0>;
+		clock-names = "MCLK1";
+		wlf,shared-lrclk;
+		#sound-dai-cells = <0>;
 	};
 };
 
@@ -314,18 +390,7 @@
 	samsung,i2c-max-bus-freq = <400000>;
 	status = "okay";
 
-/*
-	tiny4412_ts@38 {
-		compatible = "tiny4412_ts";
-		reg = <0x38>;
-		//pinctrl-names = "default";
-		//pinctrl-0 = <&i2c1_bus>; 
-		interrupt-parent = <&gpx1>;
-		interrupts = <6 IRQ_TYPE_EDGE_FALLING>; 
-		touchscreen-size-x = <1024>;
-		touchscreen-size-y = <600>;
-	}; 
-*/
+
 
 	it7260_ts@46 {
 		compatible = "it7260_ts";

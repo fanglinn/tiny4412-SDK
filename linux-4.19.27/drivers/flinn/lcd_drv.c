@@ -13,11 +13,10 @@
 #include <linux/wait.h>
 #include <linux/platform_device.h>
 #include <linux/clk.h>
-
+#include <linux/io.h>
 #include <asm/io.h>
 #include <asm/uaccess.h>
 #include <asm/div64.h>
-
 #include <asm/mach/map.h>
 #include <linux/fb.h>
 #include <asm/types.h>
@@ -33,20 +32,322 @@
 #define         WINCHMAP2               0x3c
 #define         VIDOSD0A                0x40
 #define         VIDOSD0B                0x44
-#define         VIDW00ADD0B0    0xA0
-#define         VIDW00ADD1B0    0xD0
-
+#define         VIDW00ADD0B0            0xA0
+#define         VIDW00ADD1B0            0xD0
 #define         CLK_SRC_LCD0            0x234
 #define         CLK_SRC_MASK_LCD        0x334
-#define         CLK_DIV_LCD                     0x534
+#define         CLK_DIV_LCD             0x534
 #define         CLK_GATE_IP_LCD         0x934
+#define         LCDBLK_CFG              0x00
+#define         LCDBLK_CFG2             0x04
+#define         LCD_LENTH               1024
+#define         LCD_WIDTH               600
+#define         BITS_PER_PIXEL          32
 
-#define         LCDBLK_CFG                      0x00
-#define         LCDBLK_CFG2                     0x04
+static struct fb_info *tiny4412_lcd;
+static volatile void __iomem *lcd_regs_base;
+static volatile void __iomem *lcdblk_regs_base;
+static volatile void __iomem *lcd0_configuration;//Configures power mode of LCD0.0x10020000+0x3C80
+static volatile void __iomem *clk_regs_base;
 
-#define         LCD_LENTH                       600
-#define         LCD_WIDTH                       1024
-#define         BITS_PER_PIXEL          		24
+
+static u32 pseudo_palette[16];
+static struct resource  *res0, *res1, *res2, *res3;
+
+/* from pxafb.c */
+static inline unsigned int chan_to_field(unsigned int chan, struct fb_bitfield *bf)
+{
+    chan &= 0xFFFF;
+    chan >>= 16 - bf->length;
+    return chan << bf->offset;
+}
+static int cfb_setcolreg(unsigned int regno, unsigned int red,
+                               unsigned int green, unsigned int blue,
+                               unsigned int transp, struct fb_info *info)
+{
+
+    unsigned int color = 0;
+    uint32_t *p;
+    color  = chan_to_field(red,   &info->var.red);
+    color |= chan_to_field(green, &info->var.green);
+    color |= chan_to_field(blue,  &info->var.blue);
+    
+    p = info->pseudo_palette;  
+    p[regno] = color;
+    return 0;
+}
+
+static struct fb_ops tiny4412_lcdfb_ops =
+{
+    .owner              = THIS_MODULE,
+    .fb_setcolreg       = cfb_setcolreg, 
+    .fb_fillrect        = cfb_fillrect,  
+    .fb_copyarea        = cfb_copyarea,  
+    .fb_imageblit       = cfb_imageblit, 
+};
+                            
+static int tiny4412_lcd_probe(struct platform_device *pdev)
+{
+    int ret;
+    unsigned int temp;
+    
+    /* alloc fb_info */
+    tiny4412_lcd = framebuffer_alloc(0, NULL);           
+    if(!tiny4412_lcd) {
+        return  -ENOMEM;
+    }
+   
+
+    /* set fix args */
+    strcpy(tiny4412_lcd->fix.id, "x710");                              //
+    tiny4412_lcd->fix.smem_len = LCD_LENTH*LCD_WIDTH*BITS_PER_PIXEL/8; //
+    tiny4412_lcd->fix.type     = FB_TYPE_PACKED_PIXELS;                //
+    tiny4412_lcd->fix.visual   = FB_VISUAL_TRUECOLOR;                  //
+    tiny4412_lcd->fix.line_length = LCD_LENTH*BITS_PER_PIXEL/8;        //
+
+    /* set var args */
+    tiny4412_lcd->var.xres           = LCD_LENTH;                      //
+    tiny4412_lcd->var.yres           = LCD_WIDTH;                      //
+    tiny4412_lcd->var.xres_virtual   = LCD_LENTH;                      //
+    tiny4412_lcd->var.yres_virtual   = LCD_WIDTH;                      //
+    tiny4412_lcd->var.xoffset        = 0;                              //
+    tiny4412_lcd->var.yoffset        = 0;                              //
+    tiny4412_lcd->var.bits_per_pixel = BITS_PER_PIXEL;                 //
+    
+    /* RGB:888 */
+    tiny4412_lcd->var.red.length     = 8;
+    tiny4412_lcd->var.red.offset     = 16;   //
+    tiny4412_lcd->var.green.length   = 8;
+    tiny4412_lcd->var.green.offset   = 8;    //
+    tiny4412_lcd->var.blue.length    = 8;
+    tiny4412_lcd->var.blue.offset    = 0;    //
+    tiny4412_lcd->var.activate       = FB_ACTIVATE_NOW;      //
+
+
+    tiny4412_lcd->fbops              = &tiny4412_lcdfb_ops;  //
+
+
+    tiny4412_lcd->pseudo_palette     = pseudo_palette;       //
+    tiny4412_lcd->screen_size        = LCD_LENTH * LCD_WIDTH * BITS_PER_PIXEL / 8;   //
+
+	/* get resource */
+    res0 = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+    if (res0 == NULL)
+    {
+        printk("platform_get_resource error.\n");
+        return -EINVAL;
+    }
+    lcd_regs_base = devm_ioremap_resource(&pdev->dev, res0);
+    if (lcd_regs_base == NULL)
+    {
+        printk("devm_ioremap_resource error.\n");
+        return -EINVAL;
+    }
+    
+    res1 = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+    if (res1 == NULL)
+    {
+        printk("platform_get_resource error.\n");
+        return -EINVAL;
+    }
+    lcdblk_regs_base = devm_ioremap_resource(&pdev->dev, res1);
+    if (lcdblk_regs_base == NULL)
+    {
+        printk("devm_ioremap_resource error.\n");
+        return -EINVAL;
+    }
+    
+    res2 = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+    if (res2 == NULL)
+    {
+        printk("platform_get_resource error.\n");
+        return -EINVAL;
+    }
+
+	
+    //bug:
+    //lcd0_configuration = devm_ioremap_resource(&pdev->dev, res2);  
+    lcd0_configuration = devm_ioremap(&pdev->dev, res2->start, resource_size(res2));  
+    if (lcd0_configuration == NULL)
+    {
+        printk("devm_ioremap_resource error.\n");
+        return -EINVAL;
+    }
+    *(unsigned long *)lcd0_configuration = 7; //Reset Value = 0x00000007
+        
+    res3 = platform_get_resource(pdev, IORESOURCE_MEM, 3);
+    if (res3 == NULL)
+    {
+        printk("platform_get_resource error.\n");
+        return -EINVAL;
+    }
+    //clk_regs_base = devm_ioremap_resource(&pdev->dev, res3);
+	clk_regs_base = devm_ioremap(&pdev->dev, res3->start, resource_size(res3));  
+    if (clk_regs_base == NULL)
+    {
+        printk("devm_ioremap_resource error.\n");
+        return -EINVAL;
+    }
+
+
+    //Selects clock source for LCD_BLK
+    //FIMD0_SEL:bit[3:0]=0110=SCLKMPLL_USER_T=800M
+    temp = readl(clk_regs_base + CLK_SRC_LCD0);
+    temp &= ~(0x0F<<0);
+    temp |= (0x3<<1);      /* b'0110 */
+    writel(temp, clk_regs_base + CLK_SRC_LCD0);
+
+    //Clock source mask for LCD_BLK    
+    //FIMD0_MASK:Mask output clock of MUXFIMD0 (1=Unmask)
+    temp = readl(clk_regs_base + CLK_SRC_MASK_LCD);
+    temp |= (0x01<<0);
+    writel(temp, clk_regs_base + CLK_SRC_MASK_LCD);
+
+    //Clock source mask for LCD_BLK    
+    //SCLK_FIMD0 = MOUTFIMD0/(FIMD0_RATIO + 1),no div
+    temp = readl(clk_regs_base + CLK_DIV_LCD);
+    temp &= ~(0x0F<<0);
+    writel(temp, clk_regs_base + CLK_DIV_LCD);
+
+    //Controls IP clock gating for LCD_BLK   
+    //CLK_FIMD0:Gating all clocks for FIMD0 (1=Pass)
+    temp = readl(clk_regs_base + CLK_GATE_IP_LCD);
+    temp |= (0x01<<0);
+    writel(temp, clk_regs_base + CLK_GATE_IP_LCD);
+
+	/*
+	* chapter 12.2.1.5 : LCDBLK_CFG
+	*/
+    //FIMDBYPASS_LBLK0:FIMD of LBLK0 Bypass Selection (1=FIMD Bypass)
+    temp = readl(lcdblk_regs_base + LCDBLK_CFG);
+    temp |= (0x01<<1);                   /* FIMD Bypass */
+    writel(temp, lcdblk_regs_base + LCDBLK_CFG);
+
+    //MIE0_DISPON:MIE0_DISPON: PWM output control (1=PWM outpupt enable)
+    temp = readl(lcdblk_regs_base + LCDBLK_CFG2);
+    temp |= (0x01<<0);                             /*  PWM outpupt enable */
+    writel(temp, lcdblk_regs_base + LCDBLK_CFG2);
+    
+    mdelay(1000);
+	
+
+	/*
+	* The CLKVAL field in VIDCON0 register controls the rate of RGB_VCLK signal.
+    * RGB_VCLK (Hz) = SCLK_FIMDx/(CLKVAL + 1), where CLKVAL ? 1 where, SCLK_FIMDx (x = 0, 1)
+    *
+    * Frame Rate = 1/[{(VSPW + 1) + (VBPD + 1) + (LIINEVAL + 1) + (VFPD + 1)} ? {(HSPW + 1) + 
+    * (HBPD + 1) + (HFPD + 1) +(HOZVAL + 1)} ? {(CLKVAL + 1)/(Frequency of Clock source)}]
+	*/
+    //800/(15+1) == 50M
+    temp = readl(lcd_regs_base + VIDCON0);
+    temp |= (15<<6);
+    writel(temp, lcd_regs_base + VIDCON0);
+
+    /*
+     * VIDTCON1:
+     * [5]:IVSYNC  ===> 1 : Inverted(??)
+     * [6]:IHSYNC  ===> 1 : Inverted(??)
+     * [7]:IVCLK   ===> 1 : Fetches video data at VCLK rising edge (?????)
+     * [10:9]:FIXVCLK  ====> 01 : VCLK running
+     */
+    temp = readl(lcd_regs_base + VIDCON1);
+    temp |= (1 << 9) | (1 << 7) | (1 << 5) | (1 << 6);
+    writel(temp, lcd_regs_base + VIDCON1);
+    
+    /*
+     * VIDTCON0:
+     * [23:16]:  VBPD+1=tvb-tvpw=23-11=12 --> VBPD=11
+     * [15:8] :  VFPD+1=tvfp=22 --> VFPD=21
+     * [7:0]  :  VSPW+1=tvpw=1~20(??11) --> VSPW=10
+     */
+    temp = readl(lcd_regs_base + VIDTCON0);
+    temp |= (11 << 16) | (21 << 8) | (10 << 0);
+    writel(temp, lcd_regs_base + VIDTCON0);
+
+    /*
+     * VIDTCON1:
+     * [23:16]:  HBPD+1=thb-hpw=46-21=25 --> HBPD=24
+     * [15:8] :  HFPD+1=thfp=210 --> HFPD=209
+     * [7:0]  :  HSPW+1=hpw=1~40 --> HSPW=20
+     */
+    temp = readl(lcd_regs_base + VIDTCON1);
+    temp |= (24 << 16) | (209 << 8)  | (20 << 0);
+    writel(temp, lcd_regs_base + VIDTCON1);
+
+    /*
+     * HOZVAL = (Horizontal display size) - 1 and LINEVAL = (Vertical display size) - 1.
+     * Horizontal(??) display size : 800
+     * Vertical(??) display size : 480
+     */
+    temp = (LCD_WIDTH << 11) | ((LCD_LENTH - 1) << 0);
+    writel(temp, lcd_regs_base + VIDTCON2);
+
+    /*
+     * WINCON0:
+     * [15]:Specifies Word swap control bit.  1 = Enables swap
+     * [5:2]: Selects Bits Per Pixel (BPP) mode for Window image : 1101 ===> 
+     *                          Unpacked 25 BPP (non-palletized A:1-R:8-G:8-B:8)
+     * [0]:Enables/disables video output   1 = Enables
+     */
+    temp = readl(lcd_regs_base + WINCON0);
+    temp &= ~(0x0F << 2);
+    temp |= (0X01 << 15) | (0x0D << 2) | (0x01<<0);
+    writel(temp, lcd_regs_base + WINCON0);
+
+    //Enables Channel 0.
+    temp = readl(lcd_regs_base + SHADOWCON);
+    writel(temp | 0x01, lcd_regs_base + SHADOWCON);
+    //Selects Channel 0
+    temp = readl(lcd_regs_base + WINCHMAP2);
+    temp &= ~(7 << 16);
+    temp |= (0x01 << 16);//CH0FISEL:Selects Channel 0's channel.001 = Window 0
+    temp &= ~(7 << 0);
+    temp |= (0x01 << 0);//W0FISEL:Selects Window 0's channel.001 = Channel 0
+    writel(temp, lcd_regs_base + WINCHMAP2);
+
+
+    //Window Size For example. Height *  Width (number of word)
+    temp = (LCD_LENTH * LCD_WIDTH) >> 1;
+    writel(temp, lcd_regs_base + VIDOSD0C);
+    /*
+     * bit0-10 : 
+     * bit11-21: 
+     */
+    writel(0, lcd_regs_base + VIDOSD0A);
+    /*
+     * bit0-10 :
+     * bit11-21:
+     */
+    writel(((LCD_LENTH-1) << 11) | (LCD_WIDTH-1), lcd_regs_base + VIDOSD0B);
+    
+    //Display On: ENVID and ENVID_F are set to "1".
+    temp = readl(lcd_regs_base + VIDCON0);
+    writel(temp | (0x01<<1) | (0x01<<0), lcd_regs_base + VIDCON0);
+    
+
+    tiny4412_lcd->screen_base = dma_alloc_writecombine(NULL, tiny4412_lcd->fix.smem_len, 
+					(dma_addr_t *)&tiny4412_lcd->fix.smem_start, GFP_KERNEL);
+
+    writel(tiny4412_lcd->fix.smem_start, lcd_regs_base + VIDW00ADD0B0);
+    writel(tiny4412_lcd->fix.smem_start + tiny4412_lcd->fix.smem_len, lcd_regs_base + VIDW00ADD1B0);
+
+    ret = register_framebuffer(tiny4412_lcd);
+    return ret;
+}
+static int tiny4412_lcd_remove(struct platform_device *pdev)
+{
+    //Direct Off: ENVID and ENVID_F are set to "0" simultaneously. 
+    unsigned int temp;
+    temp = readl(lcd_regs_base + VIDCON0);
+    temp &= ~(0x01<<1 | 0x01<<0); 
+    writel(temp, lcd_regs_base + VIDCON0);
+
+    unregister_framebuffer(tiny4412_lcd);
+    dma_free_writecombine(NULL, tiny4412_lcd->fix.smem_len, tiny4412_lcd->screen_base, tiny4412_lcd->fix.smem_start);
+    framebuffer_release(tiny4412_lcd);
+    return 0;
+}
+
 
 
 /*
@@ -77,311 +378,48 @@ lcd@11C00000 {
 
 */
 
-static int s3c_lcdfb_setcolreg(unsigned int regno, unsigned int red,
-                               unsigned int green, unsigned int blue,
-                               unsigned int transp, struct fb_info *info);
-
-
-static struct fb_ops s3c_lcdfb_ops =
+static const struct of_device_id tiny4412_lcd_dt_ids[] =
 {
-    .owner              = THIS_MODULE,
-    .fb_setcolreg       = s3c_lcdfb_setcolreg,
-    .fb_fillrect        = cfb_fillrect,
-    .fb_copyarea        = cfb_copyarea,
-    .fb_imageblit       = cfb_imageblit,
-};
-
-
-static struct fb_info *s3c_lcd;
-static volatile void __iomem *lcd_regs_base;
-static volatile void __iomem *clk_regs_base;
-static volatile void __iomem *lcdblk_regs_base;
-static volatile void __iomem *lcd0_configuration;
-static u32 pseudo_palette[16];
-static struct resource *res1, *res2, *res3, *res4;
-
-/* from pxafb.c */
-static inline unsigned int chan_to_field(unsigned int chan, struct fb_bitfield *bf)
-{
-    chan &= 0xffff;
-    chan >>= 16 - bf->length;
-    return chan << bf->offset;
-}
-
-
-static int s3c_lcdfb_setcolreg(unsigned int regno, unsigned int red,
-                               unsigned int green, unsigned int blue,
-                               unsigned int transp, struct fb_info *info)
-{
-    unsigned int color = 0;
-        uint32_t *p;
-
-        color  = chan_to_field(red,     &info->var.red);
-        color |= chan_to_field(green, &info->var.green);
-        color |= chan_to_field(blue, &info->var.blue);
-
-        p = info->pseudo_palette;  
-    p[regno] = color;
-    return 0;
-}
-
-static int lcd_probe(struct platform_device *pdev)
-{
-    int ret;
-    unsigned int temp;
-
-        /* 1. ????fb_info */
-    s3c_lcd = framebuffer_alloc(0, NULL);
-
-         /* 2. ?? */
-    /* 2.1 ?? fix ????? */
-    strcpy(s3c_lcd->fix.id, "s702");
-    s3c_lcd->fix.smem_len = LCD_LENTH * LCD_WIDTH * BITS_PER_PIXEL / 8;     //?????
-    s3c_lcd->fix.type     = FB_TYPE_PACKED_PIXELS;                                                      //??
-    s3c_lcd->fix.visual   = FB_VISUAL_TRUECOLOR;                                                        //TFT ???
-    s3c_lcd->fix.line_length = LCD_LENTH * BITS_PER_PIXEL / 8;                          //?????
-    /* 2.2 ?? var ????? */
-    s3c_lcd->var.xres           = LCD_LENTH;                    //x?????
-    s3c_lcd->var.yres           = LCD_WIDTH;                    //y?????
-    s3c_lcd->var.xres_virtual   = LCD_LENTH;                    //x???????
-    s3c_lcd->var.yres_virtual   = LCD_WIDTH;                    //y???????
-    s3c_lcd->var.bits_per_pixel = BITS_PER_PIXEL;               //??????bit
-    /* RGB:888 */
-    s3c_lcd->var.red.length     = 8;
-        s3c_lcd->var.red.offset     = 16;       //?
-    s3c_lcd->var.green.length   = 8;
-    s3c_lcd->var.green.offset   = 8;    //?
-    s3c_lcd->var.blue.length    = 8;
-    s3c_lcd->var.blue.offset    = 0;    //?
-        s3c_lcd->var.activate       = FB_ACTIVATE_NOW;
-        /* 2.3 ?????? */
-    s3c_lcd->fbops              = &s3c_lcdfb_ops;
-
-        /* 2.4 ????? */
-    s3c_lcd->pseudo_palette     = pseudo_palette;               //???
-    s3c_lcd->screen_size        = LCD_LENTH * LCD_WIDTH * BITS_PER_PIXEL / 8;   //????
-
-        /* 3. ??????? */
-    /* 3.1 ??GPIO??LCD */
-    //??????"default"
-    /* 3.2 ??LCD????LCD???, ??VCLK???? */
-    //?????
-    res1 = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-    if (res1 == NULL)
-    {
-        printk("platform_get_resource error\n");
-        return -EINVAL;
-    }
-    lcd_regs_base = devm_ioremap_resource(&pdev->dev, res1);
-    if (lcd_regs_base == NULL)
-    {
-        printk("devm_ioremap_resource error\n");
-        return -EINVAL;
-    }
-
-    res2 = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-    if (res2 == NULL)
-    {
-        printk("platform_get_resource error\n");
-        return -EINVAL;
-    }
-    lcdblk_regs_base = devm_ioremap_resource(&pdev->dev, res2);
-    if (lcdblk_regs_base == NULL)
-    {
-        printk("devm_ioremap_resource error\n");
-        return -EINVAL;
-    }
-
-    res3 = platform_get_resource(pdev, IORESOURCE_MEM, 2);
-    if (res3 == NULL)
-    {
-        printk("platform_get_resource error\n");
-        return -EINVAL;
-    }
-        lcd0_configuration = ioremap(res3->start, 0x04);    
-        if (lcd0_configuration == NULL)
-    {
-        printk("devm_ioremap_resource error\n");
-        return -EINVAL;
-    }
-        *(unsigned long *)lcd0_configuration = 7;
-
-    res4 = platform_get_resource(pdev, IORESOURCE_MEM, 3);
-    if (res3 == NULL)
-    {
-        printk("platform_get_resource error\n");
-        return -EINVAL;
-    }
-    clk_regs_base = ioremap(res4->start, 0x1000);
-        if (clk_regs_base == NULL)
-    {
-        printk("devm_ioremap_resource error\n");
-        return -EINVAL;
-    }
-
-    //????
-    //????? 0110  SCLKMPLL_USER_T 800M
-    temp = readl(clk_regs_base + CLK_SRC_LCD0);
-    temp &= ~0x0f;
-    temp |= 0x06;
-    writel(temp, clk_regs_base + CLK_SRC_LCD0);
-    //FIMD0_MASK
-    temp = readl(clk_regs_base + CLK_SRC_MASK_LCD);
-    temp |= 0x01;
-    writel(temp, clk_regs_base + CLK_SRC_MASK_LCD);
-    //SCLK_FIMD0 = MOUTFIMD0/(FIMD0_RATIO + 1),?? 1/1
-    temp = readl(clk_regs_base + CLK_DIV_LCD);
-    temp &= ~0x0f;
-    writel(temp, clk_regs_base + CLK_DIV_LCD);
-    //CLK_FIMD0 Pass
-    temp = readl(clk_regs_base + CLK_GATE_IP_LCD);
-    temp |= 0x01;
-    writel(temp, clk_regs_base + CLK_GATE_IP_LCD);
-    //FIMDBYPASS_LBLK0 FIMD Bypass
-    temp = readl(lcdblk_regs_base + LCDBLK_CFG);
-    temp |= 1 << 1;
-    writel(temp, lcdblk_regs_base + LCDBLK_CFG);
-    temp = readl(lcdblk_regs_base + LCDBLK_CFG2);
-    temp |= 1 << 0;
-    writel(temp, lcdblk_regs_base + LCDBLK_CFG2);
-    mdelay(1000);
-    //??      800/(23 +1 ) == 33.3M
-    temp = readl(lcd_regs_base + VIDCON0);
-    temp |= (23 << 6);
-    writel(temp, lcd_regs_base + VIDCON0);
-    /*
-     * VIDTCON1:
-     * [5]:IVSYNC  ===> 1 : Inverted(??)
-     * [6]:IHSYNC  ===> 1 : Inverted(??)
-     * [7]:IVCLK   ===> 1 : Fetches video data at VCLK rising edge (?????)
-     * [10:9]:FIXVCLK  ====> 01 : VCLK running
-     */
-    temp = readl(lcd_regs_base + VIDCON1);
-    temp |= (1 << 9) | (1 << 7) | (1 << 5) | (1 << 6);
-    writel(temp, lcd_regs_base + VIDCON1);
-    /*
-     * VIDTCON0:
-     * [23:16]:  VBPD + 1  <------> tvpw (1 - 20)  13
-     * [15:8] :  VFPD + 1  <------> tvfp 22
-     * [7:0]  :  VSPW  + 1 <------> tvb - tvpw = 23 - 13 = 10
-     */
-    temp = readl(lcd_regs_base + VIDTCON0);
-    temp |= (12 << 16) | (21 << 8) | (9);
-    writel(temp, lcd_regs_base + VIDTCON0);
-    /*
-     * VIDTCON1:
-     * [23:16]:  HBPD + 1  <------> thpw (1 - 40)  36
-     * [15:8] :  HFPD + 1  <------> thfp 210
-     * [7:0]  :  HSPW  + 1 <------> thb - thpw = 46 - 36 = 10
-     */
-    temp = readl(lcd_regs_base + VIDTCON1);
-    temp |= (35 << 16) | (209 << 8)  | (9);
-    writel(temp, lcd_regs_base + VIDTCON1);
-    /*
-     * HOZVAL = (Horizontal display size) - 1 and LINEVAL = (Vertical display size) - 1.
-     * Horizontal(??) display size : 800
-     * Vertical(??) display size : 480
-     */
-    temp = ((LCD_WIDTH-1) << 11) | LCD_LENTH;
-    writel(temp, lcd_regs_base + VIDTCON2);
-    /*
-     * WINCON0:
-     * [16]:Specifies Half-Word swap control bit.  1 = Enables swap P1779 ??????????
-     * [5:2]: Selects Bits Per Pixel (BPP) mode for Window image : 0101 ===> 16BPP RGB565
-     * [1]:Enables/disables video output   1 = Enables
-     */
-    temp = readl(lcd_regs_base + WINCON0);
-        temp &= ~(0xf << 2);
-    temp |= (1 << 15) | (0xd << 2) | 1;
-    writel(temp, lcd_regs_base + WINCON0);
-    //Window Size For example, Height ? Width (number of word)
-    temp = (LCD_LENTH * LCD_WIDTH) >> 1;
-    writel(temp, lcd_regs_base + VIDOSD0C);
-    temp = readl(lcd_regs_base + SHADOWCON);
-    writel(temp | 0x01, lcd_regs_base + SHADOWCON);
-    //p1769
-    temp = readl(lcd_regs_base + WINCHMAP2);
-    temp &= ~(7 << 16);
-    temp |= 1 << 16;
-    temp &= ~7;
-    temp |= 1;
-    writel(temp, lcd_regs_base + WINCHMAP2);
-    /*
-     * bit0-10 : ??OSD?????????????
-     * bit11-21: ??OSD?????????????
-     */
-    writel(0, lcd_regs_base + VIDOSD0A);
-    /*
-     * bit0-10 : ??OSD?????????????
-     * bit11-21: ??OSD?????????????
-     */
-    writel(((LCD_LENTH-1) << 11) | (LCD_WIDTH-1), lcd_regs_base + VIDOSD0B);
-    //Enables video output and logic immediately
-    temp = readl(lcd_regs_base + VIDCON0);
-    writel(temp | 0x03, lcd_regs_base + VIDCON0);
-
-        /* 3.3 ????(framebuffer), ??????LCD??? */
-        // s3c_lcd->screen_base         ??????
-        // s3c_lcd->fix.smem_len        ????,?????
-        // s3c_lcd->fix.smem_start      ??????
-        s3c_lcd->screen_base = dma_alloc_writecombine(NULL, s3c_lcd->fix.smem_len, (dma_addr_t *)&s3c_lcd->fix.smem_start, GFP_KERNEL);
-
-        //??????
-        writel(s3c_lcd->fix.smem_start, lcd_regs_base + VIDW00ADD0B0);
-        //??????
-        writel(s3c_lcd->fix.smem_start + s3c_lcd->fix.smem_len, lcd_regs_base + VIDW00ADD1B0);
-
-    /* 4. ?? */
-    ret = register_framebuffer(s3c_lcd);
-    return ret;
-}
-
-static int lcd_remove(struct platform_device *pdev)
-{
-    unregister_framebuffer(s3c_lcd);
-    dma_free_writecombine(NULL, s3c_lcd->fix.smem_len, s3c_lcd->screen_base, s3c_lcd->fix.smem_start);
-    framebuffer_release(s3c_lcd);
-    return 0;
-}
-
-static const struct of_device_id lcd_dt_ids[] =
-{
-    { .compatible = "tiny4412,lcd", },
+    { .compatible = "tiny4412,lcd", },         /* match with the dts */ 
     {},
 };
 
-MODULE_DEVICE_TABLE(of, lcd_dt_ids);
+MODULE_DEVICE_TABLE(of, tiny4412_lcd_dt_ids);
 
-static struct platform_driver lcd_driver =
+static struct platform_driver tiny4412_lcd_driver =
 {
     .driver        = {
-        .name      = "lcd_s702",
-        .of_match_table    = of_match_ptr(lcd_dt_ids),
+        .name      = "lcd_x710",
+        .of_match_table    = of_match_ptr(tiny4412_lcd_dt_ids),
     },
-    .probe         = lcd_probe,
-    .remove        = lcd_remove,
+    .probe         = tiny4412_lcd_probe,
+    .remove        = tiny4412_lcd_remove,
 };
 
-static int lcd_init(void)
+
+static int __init tiny4412_lcd_init(void)
 {
-    int ret;
-    ret = platform_driver_register(&lcd_driver);
-
-    if (ret)
-    {
-        printk(KERN_ERR "lcd: probe fail: %d\n", ret);
-    }
-
-    return ret;
+	int ret;
+	ret = platform_driver_register(&tiny4412_lcd_driver);
+	
+	if (ret)
+	{
+		printk(KERN_ERR "lcd: probe fail: %d\n", ret);
+	}
+	
+	return ret;
 }
 
-static void lcd_exit(void)
+
+static void __exit tiny4412_lcd_exit(void)
 {
-    printk("enter %s\n", __func__);
-    platform_driver_unregister(&lcd_driver);
+	pr_info("%s called .\n", __func__); 
+
+	platform_driver_unregister(&tiny4412_lcd_driver);
 }
 
-module_init(lcd_init);
-module_exit(lcd_exit);
+module_init(tiny4412_lcd_init);
+module_exit(tiny4412_lcd_exit);
 
 MODULE_LICENSE("GPL");
+

@@ -29,6 +29,8 @@ snd-soc-h1940-uda1380-objs := h1940_uda1380.o
 snd-soc-rx1950-uda1380-objs := rx1950_uda1380.o
 snd-soc-smdk-wm8580-objs := smdk_wm8580.o
 snd-soc-smdk-wm8994-objs := smdk_wm8994.o
+snd-soc-smdk-wm8960-objs := tiny4412_wm8960.o
+#snd-soc-tiny-wm8960-objs := tiny4412_wm8960.o
 snd-soc-snow-objs := snow.o
 snd-soc-s3c64xx-smartq-wm8987-objs := smartq_wm8987.o
 snd-soc-smdk-spdif-objs := smdk_spdif.o
@@ -42,6 +44,7 @@ snd-soc-odroid-objs := odroid.o
 snd-soc-arndale-rt5631-objs := arndale_rt5631.o
 snd-soc-tm2-wm5110-objs := tm2_wm5110.o
 
+
 obj-$(CONFIG_SND_SOC_SAMSUNG_JIVE_WM8750) += snd-soc-jive-wm8750.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_NEO1973_WM8753) += snd-soc-neo1973-wm8753.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_S3C24XX_UDA134X) += snd-soc-s3c24xx-uda134x.o
@@ -52,6 +55,8 @@ obj-$(CONFIG_SND_SOC_SAMSUNG_H1940_UDA1380) += snd-soc-h1940-uda1380.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_RX1950_UDA1380) += snd-soc-rx1950-uda1380.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_SMDK_WM8580) += snd-soc-smdk-wm8580.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_SMDK_WM8994) += snd-soc-smdk-wm8994.o
+obj-$(CONFIG_SND_SOC_SAMSUNG_SMDK_WM8960) += snd-soc-smdk-wm8960.o
+#obj-$(CONFIG_SND_SOC_SAMSUNG_TINY4412_WM8960) += snd-soc-tiny-wm8960.o
 obj-$(CONFIG_SND_SOC_SNOW) += snd-soc-snow.o
 obj-$(CONFIG_SND_SOC_SMARTQ) += snd-soc-s3c64xx-smartq-wm8987.o
 obj-$(CONFIG_SND_SOC_SAMSUNG_SMDK_SPDIF) += snd-soc-smdk-spdif.o
