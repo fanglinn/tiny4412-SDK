@@ -1,0 +1,246 @@
+Starting kernel ...
+
+[    0.000000] Booting Linux on physical CPU 0xa00
+[    0.000000] Linux version 4.14.149 (flinn@flinn) (gcc version 6.2.1 20161205 (release) [ARM/embedded-6-branch revision 243739] (GNU Tools for ARM Embedded Processors)) #1 SMP PREEMPT Thu Oct 17 22:59:22 CST 2019
+[    0.000000] CPU: ARMv7 Processor [413fc090] revision 0 (ARMv7), cr=10c5387d
+[    0.000000] CPU: PIPT / VIPT nonaliasing data cache, VIPT aliasing instruction cache
+[    0.000000] OF: fdt: Machine model: FriendlyARM TINY4412 board based on Exynos4412
+[    0.000000] Memory policy: Data cache writealloc
+[    0.000000] cma: Reserved 96 MiB at 0x7a000000
+[    0.000000] Samsung CPU ID: 0xe4412011
+[    0.000000] percpu: Embedded 15 pages/cpu s32168 r8192 d21080 u61440
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 260608
+[    0.000000] Kernel command line: noinitrd init=/linuxrc console=ttySAC0,115200 root=/dev/nfs nfsroot=192.168.1.103:/home/flinn/tmp/rootfs ip=192.168.1.123:192.168.1.103:192.168.1.1:255.255.255.0::eth0:off
+[    0.000000] PID hash table entries: 4096 (order: 2, 16384 bytes)
+[    0.000000] Dentry cache hash table entries: 131072 (order: 7, 524288 bytes)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 6, 262144 bytes)
+[    0.000000] Memory: 920496K/1048576K available (8192K kernel code, 440K rwdata, 2740K rodata, 1024K init, 7515K bss, 29776K reserved, 98304K cma-reserved, 163840K highmem)
+[    0.000000] Virtual kernel memory layout:
+[    0.000000]     vector  : 0xffff0000 - 0xffff1000   (   4 kB)
+[    0.000000]     fixmap  : 0xffc00000 - 0xfff00000   (3072 kB)
+[    0.000000]     vmalloc : 0xf0800000 - 0xff800000   ( 240 MB)
+[    0.000000]     lowmem  : 0xc0000000 - 0xf0000000   ( 768 MB)
+[    0.000000]     pkmap   : 0xbfe00000 - 0xc0000000   (   2 MB)
+[    0.000000]     modules : 0xbf000000 - 0xbfe00000   (  14 MB)
+[    0.000000]       .text : 0xc0008000 - 0xc0900000   (9184 kB)
+[    0.000000]       .init : 0xc0c00000 - 0xc0d00000   (1024 kB)
+[    0.000000]       .data : 0xc0d00000 - 0xc0d6e1c0   ( 441 kB)
+[    0.000000]        .bss : 0xc0d763f0 - 0xc14cd350   (7516 kB)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1
+[    0.000000] Running RCU self tests
+[    0.000000] Preemptible hierarchical RCU implementation.
+[    0.000000] 	RCU lockdep checking is enabled.
+[    0.000000] 	RCU restricting CPUs from NR_CPUS=8 to nr_cpu_ids=4.
+[    0.000000] 	Tasks RCU enabled.
+[    0.000000] RCU: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4
+[    0.000000] NR_IRQS: 16, nr_irqs: 16, preallocated irqs: 16
+[    0.000000] L2C: platform modifies aux control register: 0x02070000 -> 0x3e470001
+[    0.000000] L2C: platform provided aux values permit register corruption.
+[    0.000000] L2C: DT/platform modifies aux control register: 0x02070000 -> 0x3e470001
+[    0.000000] L2C-310 enabling early BRESP for Cortex-A9
+[    0.000000] L2C-310: enabling full line of zeros but not enabled in Cortex-A9
+[    0.000000] L2C-310 dynamic clock gating enabled, standby mode enabled
+[    0.000000] L2C-310 cache controller enabled, 16 ways, 1024 kB
+[    0.000000] L2C-310: CACHE_ID 0x4100c4c8, AUX_CTRL 0x4e470001
+[    0.000000] Exynos4x12 clocks: sclk_apll = 700000000, sclk_mpll = 800000000
+[    0.000000] 	sclk_epll = 96035156, sclk_vpll = 108035156, arm_clk = 1400000000
+[    0.000000] Switching to timer-based delay loop, resolution 41ns
+[    0.000000] clocksource: mct-frc: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 79635851949 ns
+[    0.000003] sched_clock: 32 bits at 24MHz, resolution 41ns, wraps every 89478484971ns
+[    0.000252] Console: colour dummy device 80x30
+[    0.000275] Lock dependency validator: Copyright (c) 2006 Red Hat, Inc., Ingo Molnar
+[    0.000284] ... MAX_LOCKDEP_SUBCLASSES:  8
+[    0.000292] ... MAX_LOCK_DEPTH:          48
+[    0.000300] ... MAX_LOCKDEP_KEYS:        8191
+[    0.000308] ... CLASSHASH_SIZE:          4096
+[    0.000316] ... MAX_LOCKDEP_ENTRIES:     32768
+[    0.000324] ... MAX_LOCKDEP_CHAINS:      65536
+[    0.000332] ... CHAINHASH_SIZE:          32768
+[    0.000340]  memory used by lock dependency info: 4655 kB
+[    0.000348]  per task-struct memory footprint: 1536 bytes
+[    0.000385] Calibrating delay loop (skipped), value calculated using timer frequency.. 48.00 BogoMIPS (lpj=240000)
+[    0.000401] pid_max: default: 32768 minimum: 301
+[    0.000575] Mount-cache hash table entries: 2048 (order: 1, 8192 bytes)
+[    0.000589] Mountpoint-cache hash table entries: 2048 (order: 1, 8192 bytes)
+[    0.001834] CPU: Testing write buffer coherency: ok
+[    0.001880] CPU0: Spectre v2: using BPIALL workaround
+[    0.002633] CPU0: thread -1, cpu 0, socket 10, mpidr 80000a00
+[    0.040042] Setting up static identity map for 0x40100000 - 0x40100060
+[    0.060006] Hierarchical SRCU implementation.
+[    0.119997] smp: Bringing up secondary CPUs ...
+[    0.200180] CPU1: thread -1, cpu 1, socket 10, mpidr 80000a01
+[    0.200187] CPU1: Spectre v2: using BPIALL workaround
+[    0.280069] CPU2: thread -1, cpu 2, socket 10, mpidr 80000a02
+[    0.280074] CPU2: Spectre v2: using BPIALL workaround
+[    0.360066] CPU3: thread -1, cpu 3, socket 10, mpidr 80000a03
+[    0.360071] CPU3: Spectre v2: using BPIALL workaround
+[    0.360257] smp: Brought up 1 node, 4 CPUs
+[    0.360269] SMP: Total of 4 processors activated (192.00 BogoMIPS).
+[    0.360279] CPU: All CPU(s) started in SVC mode.
+[    0.361932] devtmpfs: initialized
+[    0.380387] random: get_random_u32 called from bucket_table_alloc+0xe8/0x260 with crng_init=0
+[    0.380829] VFP support v0.3: implementor 41 architecture 3 part 30 variant 9 rev 4
+[    0.382023] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604462750000 ns
+[    0.382056] futex hash table entries: 1024 (order: 4, 65536 bytes)
+[    0.385185] pinctrl core: initialized pinctrl subsystem
+[    0.386339] /lcd0-power-domain@10023C80 has as child subdomain: /tv-power-domain@10023C20.
+[    0.388062] NET: Registered protocol family 16
+[    0.390355] DMA: preallocated 256 KiB pool for atomic coherent allocations
+[    0.392313] cpuidle: using governor menu
+[    0.415197] genirq: irq_chip COMBINER did not update eff. affinity mask of irq 87
+[    0.435716] SCSI subsystem initialized
+[    0.436079] usbcore: registered new interface driver usbfs
+[    0.436174] usbcore: registered new interface driver hub
+[    0.436289] usbcore: registered new device driver usb
+[    0.436943] s3c-i2c 13860000.i2c: slave address 0x10
+[    0.436970] s3c-i2c 13860000.i2c: bus frequency set to 97 KHz
+[    0.437836] s3c-i2c 13860000.i2c: i2c-0: S3C I2C adapter
+[    0.438802] Advanced Linux Sound Architecture Driver Initialized.
+[    0.440505] nfc: nfc_init: NFC Core ver 0.1
+[    0.440600] NET: Registered protocol family 39
+[    0.441129] clocksource: Switched to clocksource mct-frc
+[    0.453908] missing cooling_device property
+[    0.453922] failed to build thermal zone cpu-thermal: -2
+[    0.454103] NET: Registered protocol family 2
+[    0.455094] TCP established hash table entries: 8192 (order: 3, 32768 bytes)
+[    0.455171] TCP bind hash table entries: 8192 (order: 6, 294912 bytes)
+[    0.455746] TCP: Hash tables configured (established 8192 bind 8192)
+[    0.456019] UDP hash table entries: 512 (order: 3, 40960 bytes)
+[    0.456120] UDP-Lite hash table entries: 512 (order: 3, 40960 bytes)
+[    0.456402] NET: Registered protocol family 1
+[    0.457222] RPC: Registered named UNIX socket transport module.
+[    0.457268] RPC: Registered udp transport module.
+[    0.457278] RPC: Registered tcp transport module.
+[    0.457287] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.459423] workingset: timestamp_bits=30 max_order=18 bucket_order=0
+[    0.469410] NFS: Registering the id_resolver key type
+[    0.469602] Key type id_resolver registered
+[    0.469648] Key type id_legacy registered
+[    0.469726] romfs: ROMFS MTD (C) 2007 Red Hat, Inc.
+[    0.474284] bounce: pool size: 64 pages
+[    0.474361] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 248)
+[    0.474432] io scheduler noop registered
+[    0.474443] io scheduler deadline registered
+[    0.474638] io scheduler cfq registered (default)
+[    0.474650] io scheduler mq-deadline registered
+[    0.474660] io scheduler kyber registered
+[    0.476352] samsung-usb2-phy 125b0000.exynos-usbphy: 125b0000.exynos-usbphy supply vbus not found, using dummy regulator
+[    0.483714] dma-pl330 12680000.pdma: Loaded driver for PL330 DMAC-141330
+[    0.483731] dma-pl330 12680000.pdma: 	DBUFF-32x4bytes Num_Chans-8 Num_Peri-32 Num_Events-32
+[    0.487422] dma-pl330 12690000.pdma: Loaded driver for PL330 DMAC-141330
+[    0.487436] dma-pl330 12690000.pdma: 	DBUFF-32x4bytes Num_Chans-8 Num_Peri-32 Num_Events-32
+[    0.488569] dma-pl330 12850000.mdma: Loaded driver for PL330 DMAC-141330
+[    0.488584] dma-pl330 12850000.mdma: 	DBUFF-64x8bytes Num_Chans-8 Num_Peri-1 Num_Events-32
+[    0.564573] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+[    0.567087] 13800000.serial: ttySAC0 at MMIO 0x13800000 (irq = 47, base_baud = 0) is a S3C6400/10
+[    1.348519] console [ttySAC0] enabled
+[    1.352507] 13810000.serial: ttySAC1 at MMIO 0x13810000 (irq = 48, base_baud = 0) is a S3C6400/10
+[    1.361245] 13820000.serial: ttySAC2 at MMIO 0x13820000 (irq = 49, base_baud = 0) is a S3C6400/10
+[    1.370047] 13830000.serial: ttySAC3 at MMIO 0x13830000 (irq = 50, base_baud = 0) is a S3C6400/10
+[    1.394371] brd: module loaded
+[    1.407073] loop: module loaded
+[    1.408861] libphy: Fixed MDIO Bus: probed
+[    1.409143] usbcore: registered new interface driver r8152
+[    1.409258] usbcore: registered new interface driver asix
+[    1.409365] usbcore: registered new interface driver ax88179_178a
+[    1.409468] usbcore: registered new interface driver cdc_ether
+[    1.414820] usbcore: registered new interface driver dm9601
+[    1.420349] usbcore: registered new interface driver smsc75xx
+[    1.426113] usbcore: registered new interface driver smsc95xx
+[    1.431813] usbcore: registered new interface driver net1080
+[    1.437424] usbcore: registered new interface driver cdc_subset
+[    1.443361] usbcore: registered new interface driver zaurus
+[    1.448911] usbcore: registered new interface driver cdc_ncm
+[    1.455391] ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver
+[    1.461017] ehci-exynos: EHCI EXYNOS driver
+[    1.466061] exynos-ehci 12580000.ehci: EHCI Host Controller
+[    1.470932] exynos-ehci 12580000.ehci: new USB bus registered, assigned bus number 1
+[    1.478902] exynos-ehci 12580000.ehci: irq 45, io mem 0x12580000
+[    1.511133] exynos-ehci 12580000.ehci: USB 2.0 started, EHCI 1.00
+[    1.511819] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002
+[    1.511945] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    1.512020] usb usb1: Product: EHCI Host Controller
+[    1.513753] usb usb1: Manufacturer: Linux 4.14.149 ehci_hcd
+[    1.519308] usb usb1: SerialNumber: 12580000.ehci
+[    1.525599] hub 1-0:1.0: USB hub found
+[    1.527819] hub 1-0:1.0: 3 ports detected
+[    1.533351] ohci_hcd: USB 1.1 'Open' Host Controller (OHCI) Driver
+[    1.537923] ohci-exynos: OHCI EXYNOS driver
+[    1.542621] usbcore: registered new interface driver uas
+[    1.547433] usbcore: registered new interface driver usb-storage
+[    1.561114] usb4604 usb-hub: switched to HUB mode
+[    1.561169] usb4604 usb-hub: usb4604_probe: probed in hub mode
+[    1.564338] udc-core: couldn't find an available UDC - added [g_ether] to list of pending drivers
+[    1.574072] s3c-rtc 10070000.rtc: failed to find rtc source clock
+[    1.578796] s3c-rtc: probe of 10070000.rtc failed with error -2
+[    1.584973] i2c /dev entries driver
+[    1.589277] IR NEC protocol handler initialized
+[    1.592683] IR RC5(x/sz) protocol handler initialized
+[    1.597688] IR RC6 protocol handler initialized
+[    1.602226] IR JVC protocol handler initialized
+[    1.606715] IR Sony protocol handler initialized
+[    1.611338] IR SANYO protocol handler initialized
+[    1.616003] IR Sharp protocol handler initialized
+[    1.620689] IR MCE Keyboard/mouse protocol handler initialized
+[    1.626528] IR XMP protocol handler initialized
+[    1.633930] s3c2410-wdt 10060000.watchdog: watchdog inactive, reset disabled, irq disabled
+[    1.640041] device-mapper: ioctl: 4.37.0-ioctl (2017-09-20) initialised: dm-devel@redhat.com
+[    1.652358] sdhci: Secure Digital Host Controller Interface driver
+[    1.653847] sdhci: Copyright(c) Pierre Ossman
+[    1.658627] s3c-sdhci 12530000.sdhci: clock source 2: mmc_busclk.2 (20000000 Hz)
+[    1.723387] mmc0: SDHCI controller on samsung-hsmmc [12530000.sdhci] using ADMA
+[    1.724434] Synopsys Designware Multimedia Card Interface Driver
+[    1.738446] s5p-secss 10830000.sss: s5p-sss driver registered
+[    1.741643] usbcore: registered new interface driver usbhid
+[    1.741704] usbhid: USB HID core driver
+[    1.752398] soc-audio soc-audio: ASoC: machine TOPEET-WM8960 should use snd_soc_register_card()
+[    1.752610] soc-audio soc-audio: ASoC: CPU DAI samsung-i2s.0 not registered
+[    1.754195] NET: Registered protocol family 10
+[    1.755746] Segment Routing with IPv6
+[    1.755858] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    1.761972] NET: Registered protocol family 17
+[    1.765334] NET: Registered protocol family 15
+[    1.769913] Key type dns_resolver registered
+[    1.774310] Registering SWP/SWPB emulation handler
+[    1.818314] samsung-i2s 3830000.i2s: ASoC: Failed to create component debugfs directory
+[    1.818482] samsung-i2s 3830000.i2s: ASoC: Failed to create component debugfs directory
+[    1.821561] asoc-simple-card sound: wm8960-hifi <-> 3830000.i2s mapping ok
+[    1.901151] usb 1-2: new high-speed USB device number 2 using exynos-ehci
+[    1.955835] soc-audio: probe of soc-audio failed with error -22
+[    1.962830] hctosys: unable to open rtc device (rtc0)
+[    2.103837] usb 1-2: New USB device found, idVendor=0424, idProduct=4604
+[    2.104176] usb 1-2: New USB device strings: Mfr=0, Product=0, SerialNumber=0
+[    2.111031] hub 1-2:1.0: USB hub found
+[    2.112305] hub 1-2:1.0: 5 ports detected
+[    2.431303] usb 1-2.4: new high-speed USB device number 3 using exynos-ehci
+[    2.582748] usb 1-2.4: config 1 interface 0 altsetting 0 endpoint 0x83 has an invalid bInterval 0, changing to 7
+[    2.661024] usb 1-2.4: New USB device found, idVendor=0a46, idProduct=9621
+[    2.661291] usb 1-2.4: New USB device strings: Mfr=1, Product=2, SerialNumber=3
+[    2.676207] dm9601 1-2.4:1.0 eth0: register 'dm9601' at usb-12580000.ehci-2.4, Davicom DM96xx USB 10/100 Ethernet, 00:00:ff:ff:00:00
+[    2.771211] usb 1-2.5: new high-speed USB device number 4 using exynos-ehci
+[    2.923479] usb 1-2.5: New USB device found, idVendor=0424, idProduct=2530
+[    2.923662] usb 1-2.5: New USB device strings: Mfr=0, Product=2, SerialNumber=0
+[    2.923833] usb 1-2.5: Product: Bridge device
+[    3.053724] dm9601 1-2.4:1.0 eth0: link down
+[    3.062013] IPv6: ADDRCONF(NETDEV_UP): eth0: link is not ready
+[   13.081539] Waiting up to 110 more seconds for network.
+[   23.101417] Waiting up to 100 more seconds for network.
+[   32.087578] dm9601 1-2.4:1.0 eth0: link up, 100Mbps, full-duplex, lpa 0x45E1
+[   32.093517] random: fast init done
+[   32.101439] IPv6: ADDRCONF(NETDEV_CHANGE): eth0: link becomes ready
+[   32.131227] IP-Config: Complete:
+[   32.131309]      device=eth0, hwaddr=00:00:ff:ff:00:00, ipaddr=192.168.1.123, mask=255.255.255.0, gw=192.168.1.1
+[   32.131449]      host=192.168.1.123, domain=, nis-domain=(none)
+[   32.131545]      bootserver=192.168.1.103, rootserver=192.168.1.103, rootpath=
+[   32.138519] ALSA device list:
+[   32.138592]   #0: wm-sound
+[   32.160884] VFS: Mounted root (nfs filesystem) readonly on device 0:14.
+[   32.176678] devtmpfs: mounted
+[   32.178030] Freeing unused kernel memory: 1024K
+[   44.001600] nfs: server 192.168.1.103 not responding, still trying
+[   44.004559] nfs: server 192.168.1.103 OK
+mkdir: can't create directory '/var/lock': Read-only file system
+[root@tiny4412 ]# ls /dev/snd/
+controlC0  pcmC0D0p   timer
+[root@tiny4412 ]# 
+[root@tiny4412 ]# 
