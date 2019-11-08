@@ -29,6 +29,19 @@
 #include <debug_uart.h>
 #include "exynos4412_setup.h"
 
+#define NR_TZASC_BANKS 4
+#define RA0_VAL 0xf0000000
+
+static void tzasc_init(void) {
+	unsigned int start = samsung_get_base_dmc_tzasc();
+
+	unsigned int end = start + (DMC_OFFSET * (NR_TZASC_BANKS - 1));
+	for (; start <= end; start += DMC_OFFSET) {
+		struct exynos4412_tzasc *asc = (struct exynos4412_tzasc *)start;
+		writel(RA0_VAL, &asc->region_attributes_0);
+	}
+}
+
 struct mem_timings mem = {
 	.direct_cmd_msr = {
 		DIRECT_CMD1, DIRECT_CMD2, DIRECT_CMD3, DIRECT_CMD4
@@ -224,6 +237,7 @@ void mem_ctrl_init(int reset)
 	dmc_init(dmc);
 
 
+	tzasc_init();
 }
 
 

@@ -136,7 +136,6 @@
  *    +------------------------------------------------------------------------------------------+
  *    |                                                                                          |
  *    |            |            |               |              |                |                |
- *    |   512B     |   8K(bl1)  |    16k(bl2)   |  512K(u-boot)|    92k(TZSW)   | 16K(ENV)       |
  *    |            |            |               |              |                |                |
  *    |                                                                                          |
  *    +------------------------------------------------------------------------------------------+
@@ -150,11 +149,11 @@
  */
 
 
-#if 0
-#define CONFIG_SYS_MMC_ENV_DEV  (2)                     /* mmc2 in dts */
+#if 1 
+#define CONFIG_SYS_MMC_ENV_DEV  (2)                     /* SD : mmc2 in dts */
 #define RESERVE_BLOCK_SIZE              (512)
 #else
-#define CONFIG_SYS_MMC_ENV_DEV  (4)                     /* mmc4 */
+#define CONFIG_SYS_MMC_ENV_DEV  (4)                     /* eMMC: mmc4 */
 #define RESERVE_BLOCK_SIZE              (0)
 #endif
 
